@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply min-h-screen bg-parchment text-ink font-guild;
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(122, 87, 48, 0.09), transparent 24%),
+    radial-gradient(circle at 80% 10%, rgba(165, 61, 47, 0.06), transparent 20%),
+    repeating-linear-gradient(0deg, rgba(43, 33, 24, 0.02) 0 1px, transparent 1px 3px);
+}
+
+.parchment-card {
+  @apply rounded-xl border border-bronze/40 bg-[#f9f4e8] shadow-sm transition duration-200;
+}
+
+.parchment-card:hover {
+  @apply shadow-md;
+}
+
+.guild-badge {
+  @apply inline-flex items-center rounded-full border border-stamp/50 bg-[#f7e7dd] px-2 py-0.5 text-[11px] tracking-wide text-stamp;
+}
