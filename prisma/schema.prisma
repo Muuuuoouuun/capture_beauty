@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum QuestionStatus {
+  OPEN
+  CLOSED
+  RESOLVED
+  VOIDED
+}
+
+enum Tier {
+  OBSERVER
+  SIGN_READER
+  MINDSEER
+  PROPHET
+  ORACLE
+  ADMIN
+}
+
+model User {
+  id               String      @id @default(cuid())
+  name             String?
+  email            String      @unique
+  tier             Tier        @default(OBSERVER)
+  reputationPoints Int         @default(0)
+  createdAt        DateTime    @default(now())
+  forecasts        Forecast[]
+  rationales       Rationale[]
+  questions        Question[]
+  score            Score?
+  eventLogs        EventLog[]
+}
+
+model Question {
+  id                 String         @id @default(cuid())
+  title              String
+  category           String
+  type               String
+  outcomesJson       Json
+  openAt             DateTime
+  closeAt            DateTime
+  resolveExpectedAt  DateTime
+  status             QuestionStatus @default(OPEN)
+  createdBy          String
+  resolverType       String
+  resolverConfigJson Json
+  createdAt          DateTime       @default(now())
+  forecasts          Forecast[]
+  rationales         Rationale[]
+  resolution         Resolution?
+  events             EventLog[]
+  creator            User           @relation(fields: [createdBy], references: [id])
+
+  @@index([status, closeAt])
+}
+
+model Forecast {
+  id            String    @id @default(cuid())
+  questionId    String
+  userId        String
+  probability   Float
+  confidence    Int?
+  pledgePoints  Int?
+  createdAt     DateTime  @default(now())
+  updatedFromId String?
+  question      Question   @relation(fields: [questionId], references: [id])
+  user          User       @relation(fields: [userId], references: [id])
+  updatedFrom   Forecast?  @relation("ForecastChain", fields: [updatedFromId], references: [id])
+  nextUpdates   Forecast[] @relation("ForecastChain")
+
+  @@index([questionId, userId, createdAt])
+}
+
+model Rationale {
+  id                String   @id @default(cuid())
+  questionId        String
+  userId            String
+  text              String
+  evidenceLinksJson Json
+  assumptionsJson   Json
+  tagsJson          Json
+  upvotes           Int      @default(0)
+  downvotes         Int      @default(0)
+  createdAt         DateTime @default(now())
+  question          Question @relation(fields: [questionId], references: [id])
+  user              User     @relation(fields: [userId], references: [id])
+}
+
+model Resolution {
+  id             String   @id @default(cuid())
+  questionId     String   @unique
+  resolvedOutcome String
+  resolvedAt     DateTime
+  sourceUrl      String
+  sourceMetaJson Json
+  resolverRunId  String
+  notes          String?
+  question       Question @relation(fields: [questionId], references: [id])
+}
+
+model Score {
+  userId         String   @id
+  brierSum       Float    @default(0)
+  brierCount     Int      @default(0)
+  brierAvg       Float    @default(0)
+  streak         Int      @default(0)
+  lastResolvedAt DateTime?
+  user           User     @relation(fields: [userId], references: [id])
+}
+
+model EventLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  questionId   String?
+  eventType    String
+  metadataJson Json
+  createdAt    DateTime @default(now())
+  user         User?    @relation(fields: [userId], references: [id])
+  question     Question? @relation(fields: [questionId], references: [id])
+}
+
+model ResolverRunLog {
+  id            String   @id @default(cuid())
+  questionId    String
+  resolverType  String
+  status        String
+  resultJson    Json
+  createdAt     DateTime @default(now())
+
+  @@index([questionId, createdAt])
+}
