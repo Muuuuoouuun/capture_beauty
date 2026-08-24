@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Capture Beauty — 캡처 뷰티</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📸</text></svg>" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">📸 <strong>Capture Beauty</strong></div>
+      <div class="topbar-group">
+        <button id="btn-capture" class="btn primary" title="화면 캡처">🖥️ 화면 캡처</button>
+        <button id="btn-open" class="btn" title="이미지 열기">📂 열기</button>
+        <button id="btn-paste" class="btn" title="클립보드 붙여넣기">📋 붙여넣기</button>
+        <input id="file-input" type="file" accept="image/*" hidden />
+      </div>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-group">
+        <button id="btn-undo" class="btn" title="실행 취소">↩️</button>
+        <button id="btn-reset" class="btn" title="편집 초기화">🧹</button>
+        <select id="export-format" class="select" title="저장 형식">
+          <option value="png">PNG</option>
+          <option value="jpeg">JPG</option>
+          <option value="webp">WebP</option>
+        </select>
+        <button id="btn-export" class="btn primary" title="저장">💾 저장</button>
+        <button id="btn-copy" class="btn" title="클립보드로 복사">📤 복사</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="stage" id="stage">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">🎀</div>
+          <h1>캡처를 예쁘게, Capture Beauty</h1>
+          <p>화면을 캡처하거나 이미지를 불러와 시작하세요.</p>
+          <div class="empty-actions">
+            <button class="btn primary big" id="empty-capture">🖥️ 화면 캡처</button>
+            <button class="btn big" id="empty-open">📂 이미지 열기</button>
+          </div>
+          <p class="hint">
+            <kbd id="hint-capture">Ctrl+Shift+S</kbd> 캡처 ·
+            <kbd>Ctrl+V</kbd> 붙여넣기 · 파일을 끌어다 놓아도 됩니다
+          </p>
+        </div>
+        <div class="canvas-wrap" id="canvas-wrap" hidden>
+          <canvas id="preview"></canvas>
+        </div>
+        <div class="statusbar" id="statusbar" hidden>
+          <span id="status-size"></span>
+          <span id="status-out"></span>
+          <span id="status-note"></span>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <nav class="tabs" id="tabs">
+          <button class="tab active" data-tab="filters">🎨 필터</button>
+          <button class="tab" data-tab="ai">✨ AI</button>
+          <button class="tab" data-tab="stamps">🖃 스탬프</button>
+          <button class="tab" data-tab="background">🖼️ 배경</button>
+          <button class="tab" data-tab="settings">⚙️ 설정</button>
+        </nav>
+
+        <!-- 필터 -->
+        <section class="panel active" data-panel="filters">
+          <h2>필터 프리셋</h2>
+          <div class="preset-grid" id="filter-presets"></div>
+          <h2>세부 조정</h2>
+          <div class="sliders" id="filter-sliders"></div>
+          <button class="btn wide" id="btn-filter-reset">필터 초기화</button>
+        </section>
+
+        <!-- AI -->
+        <section class="panel" data-panel="ai">
+          <h2>AI 필터 <span class="badge-note">Claude API</span></h2>
+          <p class="desc">필터를 선택하면 이미지를 분석해 그 이미지에 맞는 보정을 적용합니다.</p>
+          <div class="ai-key-warning" id="ai-key-warning" hidden>
+            🔑 <b>API 키가 필요합니다.</b> <a href="#" id="goto-settings">설정 탭</a>에서 Anthropic API 키를 입력하세요.
+          </div>
+          <div class="ai-filter-list" id="ai-filters"></div>
+          <h2>직접 지시</h2>
+          <div class="row">
+            <input id="ai-custom-prompt" class="input" type="text"
+              placeholder="예: 새벽 감성으로 차갑고 몽환적이게" />
+            <button class="btn" id="btn-ai-custom">적용</button>
+          </div>
+          <div class="ai-comment" id="ai-comment" hidden></div>
+          <h2>외부 변환 API <span class="badge-note">선택</span></h2>
+          <p class="desc">
+            배경 제거·스타일 변환처럼 픽셀 자체를 바꾸는 자체 API 서버가 있다면 연결하세요.
+            <code>POST {image, instruction} → {image}</code>
+          </p>
+          <div class="row">
+            <input id="ai-endpoint-instruction" class="input" type="text" placeholder="변환 지시 (선택)" />
+            <button class="btn" id="btn-ai-transform">변환 실행</button>
+          </div>
+        </section>
+
+        <!-- 스탬프 -->
+        <section class="panel" data-panel="stamps">
+          <h2>스탬프 추가</h2>
+          <div class="preset-grid" id="stamp-presets"></div>
+          <div class="row">
+            <select id="stamp-emoji" class="select"></select>
+            <button class="btn" id="btn-stamp-emoji">이모지 추가</button>
+          </div>
+          <h2>스탬프 목록</h2>
+          <p class="desc">미리보기에서 드래그해 위치를 옮길 수 있어요. <kbd>Del</kbd> 로 삭제.</p>
+          <ul class="stamp-list" id="stamp-list"></ul>
+          <div id="stamp-editor" hidden>
+            <h2>선택한 스탬프</h2>
+            <div class="field" id="stamp-text-field">
+              <label>내용</label>
+              <input id="stamp-text" class="input" type="text" />
+            </div>
+            <div class="field" id="stamp-format-field" hidden>
+              <label>날짜 형식</label>
+              <select id="stamp-format" class="select wide"></select>
+            </div>
+            <div class="field">
+              <label>스타일</label>
+              <select id="stamp-style" class="select wide"></select>
+            </div>
+            <div class="field">
+              <label>색상</label>
+              <input id="stamp-color" type="color" class="color" />
+            </div>
+            <div class="sliders" id="stamp-sliders"></div>
+            <button class="btn wide danger" id="btn-stamp-delete">스탬프 삭제</button>
+          </div>
+        </section>
+
+        <!-- 배경 -->
+        <section class="panel" data-panel="background">
+          <h2>스마트 배경 필터</h2>
+          <p class="desc">하나를 누르면 여백 제거·배경·비율이 한 번에 세팅됩니다.</p>
+          <div class="smart-list" id="smart-backgrounds"></div>
+          <h2>배경</h2>
+          <div class="bg-grid" id="bg-presets"></div>
+          <div class="field" id="bg-solid-field" hidden>
+            <label>배경 색상</label>
+            <input id="bg-solid-color" type="color" class="color" />
+          </div>
+          <h2>비율</h2>
+          <div class="ratio-row" id="ratio-buttons"></div>
+          <h2>레이아웃</h2>
+          <div class="sliders" id="bg-sliders"></div>
+          <button class="btn wide" id="btn-auto-trim">✂️ 자동 여백 제거 (창 밖 정리)</button>
+        </section>
+
+        <!-- 설정 -->
+        <section class="panel" data-panel="settings">
+          <h2>단축키</h2>
+          <p class="desc">항목을 클릭한 뒤 원하는 키 조합을 누르면 바로 설정됩니다. <kbd>Esc</kbd> 취소.</p>
+          <ul class="shortcut-list" id="shortcut-list"></ul>
+          <button class="btn wide" id="btn-shortcut-reset">단축키 기본값 복원</button>
+          <h2>Anthropic API 키</h2>
+          <p class="desc">AI 필터에 사용됩니다. 키는 이 브라우저의 localStorage 에만 저장됩니다.</p>
+          <input id="api-key" class="input wide" type="password" placeholder="sk-ant-..." autocomplete="off" />
+          <h2>외부 변환 API URL</h2>
+          <input id="transform-endpoint" class="input wide" type="url" placeholder="https://my-server.example/transform" />
+        </section>
+      </aside>
+    </main>
+
+    <div class="drop-overlay" id="drop-overlay" hidden>이미지를 여기에 놓으세요</div>
+    <div class="busy-overlay" id="busy-overlay" hidden>
+      <div class="spinner"></div>
+      <div id="busy-message">처리 중…</div>
+    </div>
+    <div class="toasts" id="toasts"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
