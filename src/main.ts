@@ -79,6 +79,11 @@ const previewEl = $<HTMLCanvasElement>("#preview");
 const emptyState = $("#empty-state");
 const canvasWrap = $("#canvas-wrap");
 const statusbar = $("#statusbar");
+const cameraPreviewEl = $<HTMLCanvasElement>("#camera-preview");
+const vfHint = $("#vf-hint");
+const captureActions = $("#capture-actions");
+const editorBackdrop = $("#editor-backdrop");
+const editorWindow = $("#editor-window");
 
 function toast(message: string, kind: "info" | "success" | "error" = "info"): void {
   const box = $("#toasts");
@@ -111,6 +116,43 @@ function isEditable(target: EventTarget | null): boolean {
 }
 
 /* =========================================================
+ * 모드 전환 — 캡처 화면(카메라) ↔ 편집기(프로그램 창)
+ * ========================================================= */
+
+function isEditorOpen(): boolean {
+  return !editorBackdrop.hidden;
+}
+
+function openEditor(tab?: string): void {
+  editorBackdrop.hidden = false;
+  // 첫 오픈 시 화면 중앙에 배치 (이후엔 사용자가 옮긴 위치 유지)
+  if (!editorWindow.style.left) {
+    editorWindow.style.left = `${Math.max(0, (window.innerWidth - editorWindow.offsetWidth) / 2)}px`;
+    editorWindow.style.top = `${Math.max(0, (window.innerHeight - editorWindow.offsetHeight) / 2)}px`;
+  }
+  if (tab) switchTab(tab);
+  requestRender();
+}
+
+function closeEditor(): void {
+  editorBackdrop.hidden = true;
+}
+
+function toggleEditor(): void {
+  if (isEditorOpen()) closeEditor();
+  else openEditor();
+}
+
+/** 사진기 셔터 플래시 효과 */
+function fireShutterFlash(): void {
+  const flash = $("#shutter-flash");
+  flash.classList.remove("firing");
+  // 리플로우로 애니메이션 재시작
+  void flash.offsetWidth;
+  flash.classList.add("firing");
+}
+
+/* =========================================================
  * 렌더링
  * ========================================================= */
 
@@ -136,6 +178,10 @@ function renderPreview(): void {
   previewEl.width = result.canvas.width;
   previewEl.height = result.canvas.height;
   previewEl.getContext("2d")!.drawImage(result.canvas, 0, 0);
+  // 카메라 뷰파인더에도 같은 결과 표시 (찍은 사진 리뷰)
+  cameraPreviewEl.width = result.canvas.width;
+  cameraPreviewEl.height = result.canvas.height;
+  cameraPreviewEl.getContext("2d")!.drawImage(result.canvas, 0, 0);
   updateStatus(result);
 }
 
@@ -181,6 +227,10 @@ function setBaseCanvas(canvas: HTMLCanvasElement, opts: { pushHistory?: boolean 
   emptyState.hidden = true;
   canvasWrap.hidden = false;
   statusbar.hidden = false;
+  // 카메라 뷰: 힌트 → 찍은 사진 + 액션 바
+  vfHint.hidden = true;
+  cameraPreviewEl.hidden = false;
+  captureActions.hidden = false;
   requestRender();
 }
 
@@ -223,9 +273,11 @@ async function loadFromBlob(blob: Blob): Promise<void> {
 }
 
 async function doCaptureScreen(): Promise<void> {
+  const editorWasOpen = isEditorOpen();
   try {
     const canvas = await captureScreen();
     setBaseCanvas(canvas, { pushHistory: true });
+    if (!editorWasOpen) fireShutterFlash();
     toast(`화면을 캡처했습니다 (${canvas.width}×${canvas.height})`, "success");
   } catch (err) {
     toast(err instanceof Error ? err.message : "화면 캡처 실패", "error");
@@ -417,7 +469,7 @@ async function runAiFilter(id: string, instruction: string, label: string): Prom
   if (!requireImage()) return;
   if (!settings.apiKey.trim()) {
     toast("설정 탭에서 Anthropic API 키를 먼저 입력해주세요.", "error");
-    switchTab("settings");
+    openEditor("settings");
     return;
   }
   try {
@@ -448,7 +500,7 @@ async function runEndpointTransform(): Promise<void> {
   const endpoint = settings.transformEndpoint.trim();
   if (!endpoint) {
     toast("설정 탭에서 외부 변환 API URL 을 먼저 입력해주세요.", "error");
-    switchTab("settings");
+    openEditor("settings");
     return;
   }
   const instruction = $<HTMLInputElement>("#ai-endpoint-instruction").value.trim();
@@ -990,20 +1042,27 @@ function bindActions(): void {
     "copy-image": () => void doCopy(),
     undo,
     "reset-edits": resetEdits,
+    "toggle-editor": toggleEditor,
     "ai-enhance": () => void runAiFilter(firstAiFilter.id, firstAiFilter.instruction, firstAiFilter.name),
     "stamp-date": () => addStamp(STAMP_PRESETS.find((p) => p.id === "datetime")!.make()),
     "stamp-seal": () => addStamp(STAMP_PRESETS.find((p) => p.id === "seal-approve")!.make()),
     "cycle-ratio": cycleRatio,
     "auto-trim": () => void doAutoTrim(false),
-    "tab-filters": () => switchTab("filters"),
-    "tab-ai": () => switchTab("ai"),
-    "tab-stamps": () => switchTab("stamps"),
-    "tab-background": () => switchTab("background"),
-    "tab-settings": () => switchTab("settings"),
+    "tab-filters": () => openEditor("filters"),
+    "tab-ai": () => openEditor("ai"),
+    "tab-stamps": () => openEditor("stamps"),
+    "tab-background": () => openEditor("background"),
+    "tab-settings": () => openEditor("settings"),
   };
   for (const [id, fn] of Object.entries(handlers)) manager.on(id as ActionId, fn);
 
   window.addEventListener("keydown", (e) => {
+    // Esc: 편집 창 닫기 (단축키 녹화 중이 아닐 때 — 녹화 취소는 매니저가 처리)
+    if (e.key === "Escape" && !manager.isRecording && !isEditable(e.target) && isEditorOpen()) {
+      closeEditor();
+      e.preventDefault();
+      return;
+    }
     // 선택된 스탬프 삭제 (녹화 중이 아닐 때)
     if ((e.key === "Delete" || e.key === "Backspace") && !manager.isRecording && !isEditable(e.target)) {
       if (selectedStampId) {
@@ -1022,19 +1081,26 @@ function bindActions(): void {
  * ========================================================= */
 
 function bindInputSources(): void {
-  $("#btn-capture").addEventListener("click", () => void doCaptureScreen());
-  $("#empty-capture").addEventListener("click", () => void doCaptureScreen());
-  $("#btn-paste").addEventListener("click", () => void doPaste());
+  // 카메라 화면 (캡처 모드)
+  $("#shutter").addEventListener("click", () => void doCaptureScreen());
+  $("#cam-paste").addEventListener("click", () => void doPaste());
+  $("#cam-settings").addEventListener("click", () => openEditor("settings"));
+  $("#act-edit").addEventListener("click", () => openEditor());
+  $("#act-export").addEventListener("click", () => void doExport());
+  $("#act-copy").addEventListener("click", () => void doCopy());
+  cameraPreviewEl.addEventListener("click", () => openEditor());
 
   const fileInput = $<HTMLInputElement>("#file-input");
-  $("#btn-open").addEventListener("click", () => fileInput.click());
-  $("#empty-open").addEventListener("click", () => fileInput.click());
+  $("#cam-open").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     if (file) void loadFromBlob(file);
     fileInput.value = "";
   });
 
+  // 편집기 창 툴바
+  $("#btn-capture").addEventListener("click", () => void doCaptureScreen());
+  $("#empty-capture").addEventListener("click", () => void doCaptureScreen());
   $("#btn-undo").addEventListener("click", undo);
   $("#btn-reset").addEventListener("click", resetEdits);
   $("#btn-export").addEventListener("click", () => void doExport());
@@ -1086,6 +1152,50 @@ function bindInputSources(): void {
 }
 
 /* =========================================================
+ * 프로그램 창 — 드래그 이동 / 신호등 버튼
+ * ========================================================= */
+
+function setupWindow(): void {
+  const titlebar = $("#titlebar");
+
+  $("#win-close").addEventListener("click", closeEditor);
+  $("#win-min").addEventListener("click", closeEditor);
+  $("#win-max").addEventListener("click", () => editorWindow.classList.toggle("maximized"));
+  titlebar.addEventListener("dblclick", (e) => {
+    if (e.target instanceof HTMLElement && e.target.closest("button, select, input")) return;
+    editorWindow.classList.toggle("maximized");
+  });
+
+  let drag: { startX: number; startY: number; left: number; top: number } | null = null;
+  titlebar.addEventListener("pointerdown", (e) => {
+    if (e.target instanceof HTMLElement && e.target.closest("button, select, input")) return;
+    if (editorWindow.classList.contains("maximized")) return;
+    const rect = editorWindow.getBoundingClientRect();
+    drag = { startX: e.clientX, startY: e.clientY, left: rect.left, top: rect.top };
+    titlebar.setPointerCapture(e.pointerId);
+  });
+  titlebar.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const left = clamp(
+      drag.left + e.clientX - drag.startX,
+      120 - editorWindow.offsetWidth,
+      window.innerWidth - 120,
+    );
+    const top = clamp(drag.top + e.clientY - drag.startY, 0, window.innerHeight - 48);
+    editorWindow.style.left = `${left}px`;
+    editorWindow.style.top = `${top}px`;
+  });
+  const endDrag = (e: PointerEvent) => {
+    if (drag) {
+      titlebar.releasePointerCapture(e.pointerId);
+      drag = null;
+    }
+  };
+  titlebar.addEventListener("pointerup", endDrag);
+  titlebar.addEventListener("pointercancel", endDrag);
+}
+
+/* =========================================================
  * 테스트 훅 (e2e 스모크 테스트용)
  * ========================================================= */
 
@@ -1107,6 +1217,9 @@ declare global {
       addStampPreset: (id: string) => void;
       autoTrim: () => boolean;
       setRatio: (r: string) => void;
+      openEditor: (tab?: string) => void;
+      closeEditor: () => void;
+      isEditorOpen: () => boolean;
     };
   }
 }
@@ -1134,6 +1247,9 @@ function exposeTestHook(): void {
     },
     autoTrim: () => doAutoTrim(false),
     setRatio,
+    openEditor,
+    closeEditor,
+    isEditorOpen,
   };
 }
 
@@ -1150,6 +1266,7 @@ function init(): void {
   bindActions();
   bindInputSources();
   setupStampDragging();
+  setupWindow();
   renderStampList();
   syncBackgroundUI();
   exposeTestHook();

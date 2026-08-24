@@ -47,7 +47,7 @@ try {
     executablePath: CHROMIUM,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
   });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on("pageerror", (err) => {
     failures++;
     console.error(`  ❌ 페이지 오류: ${err.message}`);
@@ -55,13 +55,14 @@ try {
 
   await page.goto(`http://localhost:${PORT}/`);
 
-  console.log("\n[1] 앱 로드");
+  console.log("\n[1] 캡처 모드 (사진기 화면) 로드");
   check("타이틀", (await page.title()).includes("Capture Beauty"));
-  check("탭 5개", (await page.locator(".tab").count()) === 5);
-  check("빈 상태 표시", await page.locator("#empty-state").isVisible());
+  check("셔터 버튼 표시", await page.locator("#shutter").isVisible());
+  check("뷰파인더 힌트 표시", await page.locator("#vf-hint").isVisible());
+  check("편집 창은 닫힘 상태", await page.locator("#editor-backdrop").isHidden());
   check("테스트 훅 노출", await page.evaluate(() => typeof window.__cb === "object"));
 
-  console.log("\n[2] 이미지 로드 (테스트 이미지 생성 → 주입)");
+  console.log("\n[2] 캡처 (테스트 이미지 주입) → 사진 리뷰 상태");
   await page.evaluate(async () => {
     // 40px 흰 테두리 + 320×180 색 콘텐츠 (자동 트림 검증용)
     const c = document.createElement("canvas");
@@ -81,16 +82,24 @@ try {
   check("이미지 로드됨", state.hasImage);
   check("원본 크기 400×260", state.baseSize?.[0] === 400 && state.baseSize?.[1] === 260,
     JSON.stringify(state.baseSize));
+  check("뷰파인더에 찍은 사진 표시", await page.locator("#camera-preview").isVisible());
+  check("편집/저장/복사 액션 바 표시", await page.locator("#capture-actions").isVisible());
+
+  console.log("\n[3] '편집' → 프로그램 창 열림");
+  await page.locator("#act-edit").click();
+  check("편집 창 표시", await page.locator("#editor-window").isVisible());
+  check("신호등 버튼 3개", (await page.locator(".titlebar .light").count()) === 3);
+  check("탭 5개", (await page.locator(".tab").count()) === 5);
   check("미리보기 캔버스 표시", await page.locator("#preview").isVisible());
 
-  console.log("\n[3] 자동 여백 제거 (배경 필터 — 창 밖 정리)");
+  console.log("\n[4] 자동 여백 제거 (배경 필터 — 창 밖 정리)");
   const trimmed = await page.evaluate(() => window.__cb.autoTrim());
   state = await page.evaluate(() => window.__cb.getState());
   check("트림 실행됨", trimmed === true);
   check("트림 후 320×180", state.baseSize?.[0] === 320 && state.baseSize?.[1] === 180,
     JSON.stringify(state.baseSize));
 
-  console.log("\n[4] 필터 적용 (흑백 프리셋 → 픽셀 검증)");
+  console.log("\n[5] 필터 적용 (흑백 프리셋 → 픽셀 검증)");
   await page.evaluate(() => window.__cb.applyFilterPreset("mono"));
   const monoPixel = await page.evaluate(async () => {
     const url = window.__cb.exportDataUrl();
@@ -113,7 +122,7 @@ try {
     JSON.stringify(monoPixel),
   );
 
-  console.log("\n[5] 스탬프");
+  console.log("\n[6] 스탬프");
   await page.evaluate(() => window.__cb.addStampPreset("seal-approve"));
   state = await page.evaluate(() => window.__cb.getState());
   check("도장 스탬프 추가", state.stamps.length === 1 && state.stamps[0].style === "seal");
@@ -123,7 +132,7 @@ try {
   check("단축키 T 로 날짜 스탬프 추가", state.stamps.length === 2);
   check("스탬프 목록 UI 반영", (await page.locator("#stamp-list li:not(.empty)").count()) === 2);
 
-  console.log("\n[6] 스마트 배경 필터 (16:9 프레젠테이션)");
+  console.log("\n[7] 스마트 배경 필터 (16:9 프레젠테이션)");
   await page.evaluate(() => window.__cb.applySmartBackground("smart-presentation"));
   state = await page.evaluate(() => window.__cb.getState());
   check("비율 16:9 세팅", state.bg.ratio === "16:9");
@@ -143,7 +152,7 @@ try {
     JSON.stringify(exportSize),
   );
 
-  console.log("\n[7] 단축키 UI/충돌 처리");
+  console.log("\n[8] 단축키 UI/충돌 처리");
   await page.locator("body").press("5"); // 설정 탭
   check("숫자키로 탭 전환", await page.locator('[data-panel="settings"]').evaluate(
     (el) => el.classList.contains("active"),
@@ -164,7 +173,24 @@ try {
   );
   check("단축키 localStorage 저장", persisted?.shortcuts?.["capture-screen"]?.key === "F9");
 
-  console.log("\n[8] AI 패널 (키 없음 상태)");
+  console.log("\n[9] 창 동작 (닫기/단축키 토글/드래그)");
+  const beforeDrag = await page.locator("#editor-window").boundingBox();
+  await page.mouse.move(beforeDrag.x + 300, beforeDrag.y + 14);
+  await page.mouse.down();
+  await page.mouse.move(beforeDrag.x + 380, beforeDrag.y + 74, { steps: 4 });
+  await page.mouse.up();
+  const afterDrag = await page.locator("#editor-window").boundingBox();
+  check(
+    "타이틀바 드래그로 창 이동",
+    Math.round(afterDrag.x - beforeDrag.x) === 80 && Math.round(afterDrag.y - beforeDrag.y) === 60,
+    JSON.stringify({ before: beforeDrag, after: afterDrag }),
+  );
+  await page.locator("#win-close").click();
+  check("빨간 버튼으로 창 닫기 → 캡처 화면 복귀", await page.locator("#editor-backdrop").isHidden());
+  await page.locator("body").press("e"); // toggle-editor 기본 단축키
+  check("단축키 E 로 편집 창 다시 열기", await page.locator("#editor-window").isVisible());
+
+  console.log("\n[10] AI 패널 (키 없음 상태)");
   await page.locator("body").press("2");
   check("API 키 경고 표시", await page.locator("#ai-key-warning").isVisible());
   check("AI 필터 버튼 5개", (await page.locator(".ai-filter").count()) === 5);

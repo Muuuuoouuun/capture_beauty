@@ -8,6 +8,7 @@ export type ActionId =
   | "copy-image"
   | "undo"
   | "reset-edits"
+  | "toggle-editor"
   | "ai-enhance"
   | "stamp-date"
   | "stamp-seal"
@@ -32,6 +33,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "copy-image", label: "이미지 복사" },
   { id: "undo", label: "실행 취소" },
   { id: "reset-edits", label: "편집 초기화" },
+  { id: "toggle-editor", label: "편집 창 열기/닫기" },
   { id: "ai-enhance", label: "AI 자동 보정" },
   { id: "stamp-date", label: "날짜 스탬프 추가" },
   { id: "stamp-seal", label: "도장 스탬프 추가" },
@@ -62,6 +64,7 @@ export function defaultShortcuts(): Record<ActionId, KeyCombo | null> {
     "copy-image": combo("c", { ctrl: true, shift: true }),
     undo: combo("z", { ctrl: true }),
     "reset-edits": combo("x", { shift: true }),
+    "toggle-editor": combo("e"),
     "ai-enhance": combo("a"),
     "stamp-date": combo("t"),
     "stamp-seal": combo("d"),

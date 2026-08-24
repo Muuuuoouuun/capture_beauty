@@ -27,27 +27,223 @@ body {
   font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
-/* ---------- 상단 바 ---------- */
-.topbar {
+/* =========================================================
+ * 캡처 모드 — 사진기 스타일 온스크린 UI
+ * ========================================================= */
+
+#capture-view {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background:
+    radial-gradient(1100px 600px at 18% -5%, rgba(124, 108, 255, 0.1), transparent),
+    radial-gradient(900px 600px at 95% 105%, rgba(255, 92, 138, 0.09), transparent),
+    var(--bg);
+}
+
+.cam-topline {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  justify-content: space-between;
+  padding: 14px 20px;
+}
+.brand { font-size: 16px; letter-spacing: 0.2px; }
+.brand strong {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.icon-btn {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 11px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.05s;
+}
+.icon-btn:hover { background: #2b2b3a; }
+.icon-btn:active { transform: translateY(1px); }
+.icon-btn.round {
+  border-radius: 50%;
+  width: 52px;
+  height: 52px;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 뷰파인더 */
+.viewfinder {
+  position: relative;
+  flex: 1;
+  width: min(1100px, calc(100% - 48px));
+  min-height: 0;
+  margin: 4px 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    rgba(0, 0, 0, 0.35);
+  background-size: 44px 44px, 44px 44px, auto;
+  border-radius: 16px;
+}
+.vf-corner {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(232, 232, 239, 0.55);
+  pointer-events: none;
+}
+.vf-corner.tl { top: 14px; left: 14px; border-right: none; border-bottom: none; border-top-left-radius: 10px; }
+.vf-corner.tr { top: 14px; right: 14px; border-left: none; border-bottom: none; border-top-right-radius: 10px; }
+.vf-corner.bl { bottom: 14px; left: 14px; border-right: none; border-top: none; border-bottom-left-radius: 10px; }
+.vf-corner.br { bottom: 14px; right: 14px; border-left: none; border-top: none; border-bottom-right-radius: 10px; }
+
+.vf-hint { text-align: center; color: var(--text-dim); }
+.vf-hint .vf-icon { font-size: 54px; margin-bottom: 10px; }
+.vf-hint p { margin: 6px 0; font-size: 15px; }
+.vf-hint .hint { font-size: 12.5px; }
+
+#camera-preview {
+  max-width: calc(100% - 56px);
+  max-height: calc(100% - 56px);
+  border-radius: 8px;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.55);
+  cursor: zoom-in;
+}
+
+/* 캡처 후 액션 바 */
+.capture-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* 하단 카메라 바 + 셔터 */
+.camera-bar {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  padding: 10px 0 26px;
+}
+#shutter {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 4px solid rgba(232, 232, 239, 0.9);
+  background: transparent;
+  padding: 5px;
+  cursor: pointer;
+  transition: transform 0.08s, border-color 0.15s;
+}
+#shutter:hover { border-color: #fff; }
+#shutter:hover .shutter-core { filter: brightness(1.1); }
+#shutter:active { transform: scale(0.94); }
+.shutter-core {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #ff7a5c);
+}
+
+/* 셔터 플래시 */
+.shutter-flash {
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 90;
+}
+.shutter-flash.firing { animation: flash 0.45s ease-out; }
+@keyframes flash {
+  0% { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
+/* =========================================================
+ * 편집기 — 프로그램 창
+ * ========================================================= */
+
+#editor-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 8, 14, 0.45);
+  backdrop-filter: blur(3px);
+  z-index: 40;
+}
+
+.app-window {
+  position: absolute;
+  width: min(1280px, 94vw);
+  height: min(840px, 92vh);
+  display: flex;
+  flex-direction: column;
   background: var(--bg-soft);
+  border: 1px solid #3a3a4c;
+  border-radius: 12px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  animation: window-open 0.18s ease-out;
+}
+@keyframes window-open {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+}
+.app-window.maximized {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0;
+}
+
+/* 타이틀바 */
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: linear-gradient(#20202c, #1a1a24);
   border-bottom: 1px solid var(--border);
+  user-select: none;
+  cursor: grab;
   flex-wrap: wrap;
 }
-.brand { font-size: 15px; margin-right: 10px; letter-spacing: 0.2px; }
-.brand strong { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.topbar-group { display: flex; gap: 6px; align-items: center; }
-.topbar-spacer { flex: 1; }
+.titlebar:active { cursor: grabbing; }
+.traffic { display: flex; gap: 8px; }
+.light {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.light.red { background: #ff5f57; }
+.light.yellow { background: #febc2e; }
+.light.green { background: #28c840; }
+.light:hover { filter: brightness(1.15); }
+.win-title { font-size: 13px; color: var(--text-dim); }
+.win-tools { margin-left: auto; display: flex; gap: 6px; align-items: center; cursor: default; }
 
-/* ---------- 버튼/입력 ---------- */
+/* =========================================================
+ * 버튼/입력 공통
+ * ========================================================= */
+
 .btn {
   background: var(--panel-2);
   color: var(--text);
@@ -68,7 +264,8 @@ body {
   font-weight: 600;
 }
 .btn.primary:hover { filter: brightness(1.08); }
-.btn.big { font-size: 15px; padding: 12px 20px; }
+.btn.big { font-size: 15px; padding: 11px 20px; }
+.btn.sm { font-size: 12px; padding: 5px 9px; }
 .btn.wide { width: 100%; margin-top: 8px; }
 .btn.danger { border-color: var(--danger); color: #ff8f93; }
 .btn.danger:hover { background: rgba(229, 72, 77, 0.15); }
@@ -83,12 +280,17 @@ body {
   font-size: 13px;
   min-width: 0;
 }
+.select.sm { padding: 5px 6px; font-size: 12px; }
 .select.wide, .input.wide { width: 100%; }
 .input::placeholder { color: #6d6d80; }
 .color {
-  width: 44px; height: 30px; padding: 2px;
+  width: 44px;
+  height: 30px;
+  padding: 2px;
   background: var(--panel-2);
-  border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
 }
 
 kbd {
@@ -101,7 +303,10 @@ kbd {
   font-family: inherit;
 }
 
-/* ---------- 레이아웃 ---------- */
+/* =========================================================
+ * 편집기 내부 레이아웃
+ * ========================================================= */
+
 .layout {
   flex: 1;
   display: flex;
@@ -117,17 +322,13 @@ kbd {
   position: relative;
   min-width: 0;
   background:
-    radial-gradient(1000px 500px at 20% 0%, rgba(124, 108, 255, 0.08), transparent),
-    radial-gradient(800px 500px at 90% 100%, rgba(255, 92, 138, 0.07), transparent),
+    radial-gradient(900px 450px at 20% 0%, rgba(124, 108, 255, 0.07), transparent),
     var(--bg);
 }
 
-.empty-state { text-align: center; padding: 30px; }
-.empty-icon { font-size: 56px; }
-.empty-state h1 { font-size: 22px; margin: 12px 0 4px; }
-.empty-state p { color: var(--text-dim); margin: 6px 0; }
-.empty-actions { display: flex; gap: 10px; justify-content: center; margin: 18px 0 10px; }
-.hint { font-size: 12.5px; }
+.empty-state { text-align: center; padding: 30px; color: var(--text-dim); }
+.empty-state .empty-icon { font-size: 46px; margin-bottom: 8px; }
+.empty-state p { margin: 8px 0 14px; }
 
 .canvas-wrap {
   flex: 1;
@@ -135,7 +336,7 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 22px;
+  padding: 20px;
   min-height: 0;
 }
 #preview {
@@ -247,7 +448,8 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px; height: 14px;
+  width: 14px;
+  height: 14px;
   background: var(--accent);
   border-radius: 50%;
   border: 2px solid #fff2;
@@ -389,7 +591,8 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 14px;
 }
 .spinner {
-  width: 38px; height: 38px;
+  width: 38px;
+  height: 38px;
   border: 3px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
@@ -424,7 +627,15 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ---------- 반응형 ---------- */
 @media (max-width: 860px) {
+  .app-window {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0;
+  }
   .layout { flex-direction: column; }
   .sidebar { width: 100%; border-left: none; border-top: 1px solid var(--border); max-height: 45vh; }
-  .stage { min-height: 45vh; }
+  .stage { min-height: 40vh; }
+  .camera-bar { gap: 22px; }
 }
