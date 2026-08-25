@@ -33,6 +33,11 @@ const {
 
 app.setName("Capture Beauty");
 
+// 테스트/포터블 실행용: 설정 저장 위치 오버라이드
+if (process.env.CAPTURE_BEAUTY_USER_DATA) {
+  app.setPath("userData", process.env.CAPTURE_BEAUTY_USER_DATA);
+}
+
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;

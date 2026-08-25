@@ -254,6 +254,49 @@ try {
     console.log("  ⏭️ Document PiP 미지원 환경 — 위젯 테스트 건너뜀 (지원 감지 로직은 통과)");
   }
 
+  console.log("\n[14] 홈 덱 — 룩 즉시 적용 (이미지 있음)");
+  check("룩 카드 9개", (await page.locator("#look-row .look-card").count()) === 9);
+  check("도장 칩 7개", (await page.locator("#fun-row .chip").count()) === 7);
+  await page.locator("body").press("Shift+X"); // 편집 초기화
+  await page.locator('[data-look="look-cinema"]').click();
+  state = await page.evaluate(() => window.__cb.getState());
+  check("시네마 룩: 필터 적용", state.filters.contrast === 18, JSON.stringify(state.filters));
+  check(
+    "시네마 룩: 배경/비율 적용",
+    state.bg.preset === "midnight" && state.bg.ratio === "16:9",
+    JSON.stringify({ preset: state.bg.preset, ratio: state.bg.ratio }),
+  );
+  check("룩 카드 활성 표시", await page.locator('[data-look="look-cinema"]').evaluate(
+    (el) => el.classList.contains("active"),
+  ));
+
+  console.log("\n[15] 홈 덱 — 다음 샷 예약 (이미지 없음, 리로드 후)");
+  await page.reload();
+  await page.waitForTimeout(400);
+  check("리로드 후 이미지 없음", (await page.evaluate(() => window.__cb.getState())).hasImage === false);
+  await page.locator('[data-look="look-cinema"]').click(); // 룩 예약
+  await page.locator('[data-stamp-chip="seal-approve"]').click(); // 도장 예약
+  check("도장 칩 armed 표시", await page.locator('[data-stamp-chip="seal-approve"]').evaluate(
+    (el) => el.classList.contains("armed"),
+  ));
+  check("다음 샷 안내 표시", await page.locator("#armed-note").isVisible());
+  await page.evaluate(() => window.__cb.connectSessionForTest());
+  await page.locator("#shutter").click(); // 촬영 → 룩+도장 자동 적용
+  await page.waitForTimeout(500);
+  state = await page.evaluate(() => window.__cb.getState());
+  check("샷에 룩 자동 적용", state.filters.contrast === 18 && state.bg.preset === "midnight");
+  check("샷에 도장 자동 추가", state.stamps.length === 1 && state.stamps[0].style === "seal",
+    JSON.stringify(state.stamps.map((s) => s.style)));
+  check("도장 예약은 소진됨", (await page.evaluate(() => window.__cb.getArmedStamps())).length === 0);
+  check("룩은 촬영 모드로 유지", (await page.evaluate(() => window.__cb.getLookId())) === "look-cinema");
+  await page.evaluate(() => window.__cb.stopSession());
+
+  console.log("\n[16] 퀵 칩 상태 표시");
+  await page.evaluate(() => window.__cb.setQuickSettings({ enabled: true, autoCopy: true, autoSave: false, autoTrim: false, thumbnailSec: 6 }));
+  check("퀵 칩: 복사 표시", (await page.locator("#qk-chip").textContent())?.includes("복사"));
+  await page.evaluate(() => window.__cb.setQuickSettings({ enabled: false }));
+  check("퀵 칩: 꺼짐 표시", (await page.locator("#qk-chip").textContent())?.includes("꺼짐"));
+
   if (failures === 0) {
     console.log("\n🎉 e2e 스모크 테스트 전체 통과");
   } else {

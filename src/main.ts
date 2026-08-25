@@ -42,6 +42,7 @@ import {
 import { CaptureSession, type QuickSettings } from "./quickcapture";
 import { isWidgetSupported, openWidget, type WidgetHandle } from "./widget";
 import { getNative } from "./native";
+import { getLook, LOOKS, pickRandomLook, RANDOM_LOOK_ID, type LookDef } from "./looks";
 import {
   AI_FILTERS,
   adjustmentsToFilterParams,
@@ -68,6 +69,10 @@ const settings: AppSettings = loadSettings();
 const manager = new ShortcutManager(settings.shortcuts ?? undefined);
 const session = new CaptureSession();
 let widget: WidgetHandle | null = null;
+
+/** 홈 덱: 선택된 촬영 룩(매 샷에 적용) + 다음 샷 대기 중인 도장들 */
+let selectedLookId = "look-none";
+const armedStampIds = new Set<string>();
 
 const PREVIEW_MAX_DIM = 1600;
 
@@ -237,6 +242,7 @@ function setBaseCanvas(canvas: HTMLCanvasElement, opts: { pushHistory?: boolean 
   vfHint.hidden = true;
   cameraPreviewEl.hidden = false;
   captureActions.hidden = false;
+  syncArmedNote();
   requestRender();
 }
 
@@ -276,6 +282,7 @@ async function loadFromBlob(blob: Blob): Promise<void> {
   const canvas = await canvasFromBlob(blob);
   setBaseCanvas(canvas, { pushHistory: true });
   toast(`이미지를 불러왔습니다 (${canvas.width}×${canvas.height})`, "success");
+  applyShotExtras();
 }
 
 /**
@@ -295,6 +302,7 @@ async function doCaptureScreen(fromWindow?: Window): Promise<void> {
     setBaseCanvas(canvas, { pushHistory: true });
     if (!editorWasOpen) fireShutterFlash();
     toast(`화면을 캡처했습니다 (${canvas.width}×${canvas.height})`, "success");
+    applyShotExtras();
     await runQuickActions(fromWindow);
   } catch (err) {
     toast(err instanceof Error ? err.message : "화면 캡처 실패", "error");
@@ -306,6 +314,7 @@ async function doPaste(): Promise<void> {
     const canvas = await canvasFromClipboard();
     setBaseCanvas(canvas, { pushHistory: true });
     toast("클립보드 이미지를 불러왔습니다.", "success");
+    applyShotExtras();
   } catch (err) {
     toast(err instanceof Error ? err.message : "붙여넣기 실패", "error");
   }
@@ -442,7 +451,7 @@ function syncSessionUI(): void {
   const active = session.active;
   $("#live-badge").hidden = !active;
   const btn = $("#cam-live");
-  btn.classList.toggle("active", active);
+  btn.classList.toggle("live", active);
   btn.textContent = active ? "⛔ 연결 해제" : "🔗 연속 캡처";
   widget?.setSessionActive(active);
 }
@@ -823,14 +832,14 @@ function updateSelectedStamp(mut: (s: Stamp) => void): void {
   requestRender();
 }
 
-function addStamp(stamp: Stamp): void {
+function addStamp(stamp: Stamp, opts: { silent?: boolean } = {}): void {
   if (!requireImage()) return;
   stamps.push(stamp);
   selectedStampId = stamp.id;
   renderStampList();
   refreshStampEditor();
   requestRender();
-  toast("스탬프를 추가했습니다. 드래그로 위치를 옮겨보세요.", "success");
+  if (!opts.silent) toast("스탬프를 추가했습니다. 드래그로 위치를 옮겨보세요.", "success");
 }
 
 function removeStamp(id: string): void {
@@ -1079,14 +1088,173 @@ function doAutoTrim(silent: boolean): boolean {
 }
 
 /** 스마트 배경 필터: 트림 + 배경/비율/여백 일괄 적용 */
-function applySmartBackground(id: string): void {
+function applySmartBackground(id: string, opts: { silent?: boolean } = {}): void {
   const f = SMART_BACKGROUND_FILTERS.find((x) => x.id === id);
   if (!f || !requireImage()) return;
   const trimmed = f.autoTrim ? doAutoTrim(true) : false;
   bg = { ...bg, ...f.options };
   syncBackgroundUI();
   requestRender();
-  toast(`${f.name} 적용${trimmed ? " (여백 자동 제거됨)" : ""}`, "success");
+  if (!opts.silent) toast(`${f.name} 적용${trimmed ? " (여백 자동 제거됨)" : ""}`, "success");
+}
+
+/* =========================================================
+ * 홈 덱 — 카메라 화면의 퀵·룩·도장 (촬영 전 선택 → 샷에 자동 적용)
+ * ========================================================= */
+
+/** 룩을 현재 사진에 적용 (랜덤은 호출 전에 해석해서 전달) */
+function applyLookNow(look: LookDef, opts: { silent?: boolean } = {}): void {
+  if (!baseCanvas) return;
+  if (look.autoTrim) doAutoTrim(true);
+  if (look.smartId) applySmartBackground(look.smartId, { silent: true });
+  if (look.bg) {
+    bg = { ...bg, ...look.bg };
+    syncBackgroundUI();
+  }
+  if (look.filterPresetId) applyFilterPreset(look.filterPresetId);
+  requestRender();
+  if (!opts.silent) toast(`${look.emoji} ${look.name} 룩 적용`, "success");
+}
+
+/** 새로 획득한 샷에 선택된 룩 + 대기 중인 도장을 자동 적용 */
+function applyShotExtras(): void {
+  const selected = getLook(selectedLookId);
+  const look =
+    selected && selected.id !== "look-none"
+      ? selected.id === RANDOM_LOOK_ID
+        ? pickRandomLook()
+        : selected
+      : null;
+  if (look) applyLookNow(look, { silent: true });
+
+  let stampCount = 0;
+  for (const id of armedStampIds) {
+    const preset = STAMP_PRESETS.find((p) => p.id === id);
+    if (preset) {
+      addStamp(preset.make(), { silent: true });
+      stampCount++;
+    }
+  }
+  armedStampIds.clear();
+  syncFunRow();
+  syncArmedNote();
+
+  const bits: string[] = [];
+  if (look) bits.push(`${look.emoji} ${look.name} 룩`);
+  if (stampCount) bits.push(`스탬프 ${stampCount}개`);
+  if (bits.length) toast(`✨ ${bits.join(" · ")} 자동 적용`, "success");
+}
+
+function selectLook(id: string): void {
+  selectedLookId = id;
+  syncLookUI();
+  syncArmedNote();
+  const look = getLook(id);
+  if (!look || id === "look-none") return;
+  if (baseCanvas) {
+    applyLookNow(look.id === RANDOM_LOOK_ID ? pickRandomLook() : look);
+  } else {
+    toast(`${look.emoji} ${look.name} 룩 선택 — 다음 캡처에 자동 적용돼요.`);
+  }
+}
+
+function syncLookUI(): void {
+  document.querySelectorAll<HTMLButtonElement>("#look-row .look-card").forEach((el) => {
+    el.classList.toggle("active", el.dataset.look === selectedLookId);
+  });
+}
+
+function syncFunRow(): void {
+  document.querySelectorAll<HTMLButtonElement>("#fun-row .chip").forEach((el) => {
+    el.classList.toggle("armed", armedStampIds.has(el.dataset.stampChip ?? ""));
+  });
+}
+
+function syncArmedNote(): void {
+  const note = $("#armed-note");
+  const look = getLook(selectedLookId);
+  const bits: string[] = [];
+  if (!baseCanvas && look && look.id !== "look-none") bits.push(`${look.emoji} ${look.name}`);
+  if (armedStampIds.size) bits.push(`스탬프 ${armedStampIds.size}개`);
+  note.hidden = bits.length === 0;
+  note.textContent = bits.length ? `다음 샷: ${bits.join(" · ")}` : "";
+}
+
+function refreshQuickChip(): void {
+  const chip = $("#qk-chip");
+  const q = settings.quick;
+  if (!q.enabled) {
+    chip.textContent = "⚡ 캡처 후: 꺼짐";
+    chip.classList.remove("active");
+    return;
+  }
+  const bits = [
+    q.autoTrim ? "트림" : null,
+    q.autoCopy ? "복사" : null,
+    q.autoSave ? "저장" : null,
+    q.thumbnailSec > 0 ? "썸네일" : null,
+  ].filter((v): v is string => v !== null);
+  chip.textContent = `⚡ 캡처 후: ${bits.length ? bits.join("·") : "켜짐"}`;
+  chip.classList.add("active");
+}
+
+const HOME_STAMP_CHIPS = [
+  "date",
+  "datetime",
+  "seal-approve",
+  "seal-check",
+  "badge-confidential",
+  "badge-draft",
+  "emoji-star",
+];
+
+function buildHomeDeck(): void {
+  const lookRow = $("#look-row");
+  for (const look of LOOKS) {
+    const card = document.createElement("button");
+    card.className = "look-card";
+    card.dataset.look = look.id;
+    const emoji = document.createElement("span");
+    emoji.className = "lk-emoji";
+    emoji.textContent = look.emoji;
+    const name = document.createElement("span");
+    name.textContent = look.name;
+    card.append(emoji, name);
+    card.title =
+      look.id === "look-none"
+        ? "룩 없이 캡처"
+        : "사진이 있으면 바로 적용, 없으면 다음 캡처에 자동 적용";
+    card.addEventListener("click", () => selectLook(look.id));
+    lookRow.appendChild(card);
+  }
+
+  const funRow = $("#fun-row");
+  for (const id of HOME_STAMP_CHIPS) {
+    const preset = STAMP_PRESETS.find((p) => p.id === id);
+    if (!preset) continue;
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.dataset.stampChip = id;
+    chip.textContent = preset.name;
+    chip.title = "사진이 있으면 바로 추가, 없으면 다음 샷에 자동 추가";
+    chip.addEventListener("click", () => {
+      if (baseCanvas) {
+        addStamp(preset.make());
+      } else {
+        if (armedStampIds.has(id)) armedStampIds.delete(id);
+        else armedStampIds.add(id);
+        syncFunRow();
+        syncArmedNote();
+      }
+    });
+    funRow.appendChild(chip);
+  }
+
+  $("#qk-chip").addEventListener("click", () => openEditor("settings"));
+  syncLookUI();
+  syncFunRow();
+  syncArmedNote();
+  refreshQuickChip();
 }
 
 /* =========================================================
@@ -1109,6 +1277,7 @@ function buildSettingsPanel(): void {
     cb.addEventListener("change", () => {
       settings.quick[key] = cb.checked;
       saveSettings(settings);
+      refreshQuickChip();
     });
   }
   const qkSliders = $("#qk-sliders");
@@ -1120,6 +1289,7 @@ function buildSettingsPanel(): void {
     (v) => {
       settings.quick.thumbnailSec = v;
       saveSettings(settings);
+      refreshQuickChip();
     },
   );
   qkSliders.appendChild(thumbSlider);
@@ -1261,6 +1431,11 @@ function resetEdits(): void {
   bg = defaultBackgroundOptions();
   stamps = [];
   selectedStampId = null;
+  selectedLookId = "look-none";
+  armedStampIds.clear();
+  syncLookUI();
+  syncFunRow();
+  syncArmedNote();
   setActiveFilterPreset("none");
   refreshFilterUI();
   syncBackgroundUI();
@@ -1437,6 +1612,7 @@ function setupNative(): void {
         setBaseCanvas(canvas, { pushHistory: true });
         if (!payload.openEditor && !isEditorOpen()) fireShutterFlash();
         toast(`화면을 캡처했습니다 (${canvas.width}×${canvas.height})`, "success");
+        applyShotExtras();
         await runQuickActions();
         if (payload.openEditor) openEditor();
       } catch (err) {
@@ -1523,6 +1699,10 @@ declare global {
       getQuickSettings: () => QuickSettings;
       isWidgetOpen: () => boolean;
       widgetSupported: () => boolean;
+      selectLook: (id: string) => void;
+      getLookId: () => string;
+      toggleArmedStamp: (id: string) => void;
+      getArmedStamps: () => string[];
     };
   }
 }
@@ -1572,10 +1752,20 @@ function exposeTestHook(): void {
     setQuickSettings: (partial) => {
       settings.quick = { ...settings.quick, ...partial };
       saveSettings(settings);
+      refreshQuickChip();
     },
     getQuickSettings: () => ({ ...settings.quick }),
     isWidgetOpen: () => widget !== null,
     widgetSupported: isWidgetSupported,
+    selectLook,
+    getLookId: () => selectedLookId,
+    toggleArmedStamp: (id) => {
+      if (armedStampIds.has(id)) armedStampIds.delete(id);
+      else armedStampIds.add(id);
+      syncFunRow();
+      syncArmedNote();
+    },
+    getArmedStamps: () => [...armedStampIds],
   };
 }
 
@@ -1589,6 +1779,7 @@ function init(): void {
   buildStampPanel();
   buildBackgroundPanel();
   buildSettingsPanel();
+  buildHomeDeck();
   bindActions();
   bindInputSources();
   setupStampDragging();

@@ -3,7 +3,9 @@
  * 사전 조건: `npm run build` (dist/ 필요)
  * 실행: npm run e2e:desktop  (리눅스 헤드리스는 xvfb-run -a npm run e2e:desktop)
  */
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { _electron } = require("playwright-core");
@@ -31,7 +33,12 @@ try {
   app = await _electron.launch({
     executablePath: electronPath,
     args: ["desktop/main.cjs", "--no-sandbox", "--disable-dev-shm-usage"],
-    env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: "1" },
+    env: {
+      ...process.env,
+      ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
+      // 매 실행 새 userData — 이전 실행이 저장한 단축키 설정에 오염되지 않게
+      CAPTURE_BEAUTY_USER_DATA: mkdtempSync(join(tmpdir(), "cb-e2e-")),
+    },
   });
   const page = await app.firstWindow();
   page.on("pageerror", (err) => {

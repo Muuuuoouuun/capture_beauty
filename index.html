@@ -14,8 +14,6 @@
         <div class="brand">📸 <strong>Capture Beauty</strong></div>
         <div class="cam-topline-right">
           <span id="live-badge" class="live-badge" hidden>● LIVE</span>
-          <button id="cam-live" class="icon-btn labeled" title="연속 캡처: 화면을 한 번만 연결하면 이후 셔터는 선택창 없이 즉시 찍힙니다">🔗 연속 캡처</button>
-          <button id="cam-widget" class="icon-btn labeled" title="항상 위에 떠 있는 초소형 캡처 위젯 (PiP)">🧷 위젯</button>
           <button id="cam-settings" class="icon-btn" title="설정 (편집 창)">⚙️</button>
         </div>
       </div>
@@ -27,7 +25,7 @@
         <div class="vf-corner br"></div>
         <div class="vf-hint" id="vf-hint">
           <div class="vf-icon">🖥️</div>
-          <p>셔터를 누르면 화면·창·탭을 캡처합니다</p>
+          <p>아래에서 룩을 고르고 셔터를 누르세요 — 캡처와 꾸미기가 한 번에 끝납니다</p>
           <p class="hint">
             <kbd id="hint-capture">Ctrl+Shift+S</kbd> 캡처 ·
             <kbd>Ctrl+V</kbd> 붙여넣기 · 이미지 드래그&드롭 지원
@@ -42,9 +40,32 @@
         <button id="act-copy" class="btn big">📤 복사</button>
       </div>
 
+      <!-- 홈 덱: 퀵 · 룩 · 스탬프 -->
+      <div class="home-deck" id="home-deck">
+        <div class="deck-row">
+          <span class="deck-label">⚡ 퀵</span>
+          <div class="deck-items">
+            <button id="cam-live" class="chip" title="화면을 한 번만 연결하면 이후 셔터는 선택창 없이 즉시 찍힙니다">🔗 연속 캡처</button>
+            <button id="cam-widget" class="chip" title="항상 위에 떠 있는 초소형 캡처 위젯 (PiP)">🧷 위젯</button>
+            <button id="qk-chip" class="chip" title="캡처 후 자동 동작 — 클릭해서 설정">⚡ 캡처 후: …</button>
+          </div>
+        </div>
+        <div class="deck-row">
+          <span class="deck-label">🎨 룩</span>
+          <div class="deck-items scroll-x" id="look-row"></div>
+        </div>
+        <div class="deck-row">
+          <span class="deck-label">🖃 도장</span>
+          <div class="deck-items scroll-x" id="fun-row"></div>
+        </div>
+      </div>
+
       <div class="camera-bar">
         <button id="cam-open" class="icon-btn round" title="이미지 열기">📂</button>
-        <button id="shutter" title="화면 캡처 (셔터)"><span class="shutter-core"></span></button>
+        <div class="shutter-col">
+          <button id="shutter" title="화면 캡처 (셔터)"><span class="shutter-core"></span></button>
+          <div class="armed-note" id="armed-note" hidden></div>
+        </div>
         <button id="cam-paste" class="icon-btn round" title="클립보드 붙여넣기">📋</button>
       </div>
 
