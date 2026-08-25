@@ -12,7 +12,12 @@
     <div id="capture-view">
       <div class="cam-topline">
         <div class="brand">📸 <strong>Capture Beauty</strong></div>
-        <button id="cam-settings" class="icon-btn" title="설정 (편집 창)">⚙️</button>
+        <div class="cam-topline-right">
+          <span id="live-badge" class="live-badge" hidden>● LIVE</span>
+          <button id="cam-live" class="icon-btn labeled" title="연속 캡처: 화면을 한 번만 연결하면 이후 셔터는 선택창 없이 즉시 찍힙니다">🔗 연속 캡처</button>
+          <button id="cam-widget" class="icon-btn labeled" title="항상 위에 떠 있는 초소형 캡처 위젯 (PiP)">🧷 위젯</button>
+          <button id="cam-settings" class="icon-btn" title="설정 (편집 창)">⚙️</button>
+        </div>
       </div>
 
       <div class="viewfinder" id="viewfinder">
@@ -185,6 +190,15 @@
 
             <!-- 설정 -->
             <section class="panel" data-panel="settings">
+              <h2>퀵 캡처 (캡처 후 자동 동작)</h2>
+              <p class="desc">셔터만 누르면 나머지는 자동 — 창을 띄우지 않고 캡처를 끝냅니다.</p>
+              <div class="check-col">
+                <label><input type="checkbox" id="qk-enabled" /> 퀵 캡처 켜기</label>
+                <label><input type="checkbox" id="qk-trim" /> 자동 여백 제거 (창 밖 정리)</label>
+                <label><input type="checkbox" id="qk-copy" /> 자동으로 클립보드에 복사</label>
+                <label><input type="checkbox" id="qk-save" /> 자동으로 파일 저장</label>
+              </div>
+              <div class="sliders" id="qk-sliders"></div>
               <h2>단축키</h2>
               <p class="desc">항목을 클릭한 뒤 원하는 키 조합을 누르면 바로 설정됩니다. <kbd>Esc</kbd> 취소.</p>
               <ul class="shortcut-list" id="shortcut-list"></ul>
@@ -197,6 +211,17 @@
             </section>
           </aside>
         </main>
+      </div>
+    </div>
+
+    <!-- macOS 스타일 플로팅 썸네일 (퀵 캡처 후 잠깐 표시) -->
+    <div class="quick-thumb" id="quick-thumb" hidden>
+      <img id="quick-thumb-img" alt="방금 캡처" title="클릭하면 편집 창이 열립니다" />
+      <div class="quick-thumb-actions">
+        <button id="qt-copy" class="btn sm" title="복사">📋</button>
+        <button id="qt-save" class="btn sm" title="저장">💾</button>
+        <button id="qt-edit" class="btn sm" title="편집">✏️</button>
+        <button id="qt-close" class="btn sm" title="닫기">✕</button>
       </div>
     </div>
 

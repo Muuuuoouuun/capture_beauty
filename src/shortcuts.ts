@@ -2,6 +2,8 @@ import type { KeyCombo } from "./types";
 
 export type ActionId =
   | "capture-screen"
+  | "toggle-session"
+  | "toggle-widget"
   | "open-file"
   | "paste-clipboard"
   | "export-image"
@@ -26,7 +28,9 @@ export interface ActionDef {
 }
 
 export const ACTIONS: ActionDef[] = [
-  { id: "capture-screen", label: "화면 캡처" },
+  { id: "capture-screen", label: "화면 캡처 (셔터)" },
+  { id: "toggle-session", label: "연속 캡처 연결/해제" },
+  { id: "toggle-widget", label: "캡처 위젯 열기/닫기" },
   { id: "open-file", label: "이미지 열기" },
   { id: "paste-clipboard", label: "클립보드 붙여넣기" },
   { id: "export-image", label: "이미지 저장" },
@@ -58,6 +62,8 @@ const combo = (key: string, mods: Partial<KeyCombo> = {}): KeyCombo => ({
 export function defaultShortcuts(): Record<ActionId, KeyCombo | null> {
   return {
     "capture-screen": combo("s", { ctrl: true, shift: true }),
+    "toggle-session": combo("c"),
+    "toggle-widget": combo("p"),
     "open-file": combo("o", { ctrl: true }),
     "paste-clipboard": combo("v", { ctrl: true }),
     "export-image": combo("e", { ctrl: true }),

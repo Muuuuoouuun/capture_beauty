@@ -1,5 +1,7 @@
 import type { ShortcutMap } from "./shortcuts";
 import { parseShortcutsValue } from "./shortcuts";
+import type { QuickSettings } from "./quickcapture";
+import { defaultQuickSettings, normalizeQuickSettings } from "./quickcapture";
 
 const STORAGE_KEY = "capture-beauty:settings:v1";
 
@@ -7,10 +9,11 @@ export interface AppSettings {
   shortcuts: Partial<ShortcutMap> | null;
   apiKey: string;
   transformEndpoint: string;
+  quick: QuickSettings;
 }
 
 export function defaultSettings(): AppSettings {
-  return { shortcuts: null, apiKey: "", transformEndpoint: "" };
+  return { shortcuts: null, apiKey: "", transformEndpoint: "", quick: defaultQuickSettings() };
 }
 
 export function loadSettings(storage: Pick<Storage, "getItem"> = safeStorage()): AppSettings {
@@ -23,6 +26,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> = safeStorage()):
       shortcuts: parseShortcutsValue(parsed.shortcuts),
       apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : "",
       transformEndpoint: typeof parsed.transformEndpoint === "string" ? parsed.transformEndpoint : "",
+      quick: normalizeQuickSettings(parsed.quick),
     };
   } catch {
     return d;
@@ -40,6 +44,7 @@ export function saveSettings(
         shortcuts: settings.shortcuts,
         apiKey: settings.apiKey,
         transformEndpoint: settings.transformEndpoint,
+        quick: settings.quick,
       }),
     );
   } catch {

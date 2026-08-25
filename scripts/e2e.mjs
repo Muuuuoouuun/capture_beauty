@@ -195,6 +195,65 @@ try {
   check("API 키 경고 표시", await page.locator("#ai-key-warning").isVisible());
   check("AI 필터 버튼 5개", (await page.locator(".ai-filter").count()) === 5);
 
+  console.log("\n[11] 연속 캡처 세션 (스트림 주입 → 선택창 없는 즉시 캡처)");
+  await page.locator("#win-close").click(); // 캡처 화면으로 복귀
+  await page.evaluate(() => window.__cb.setQuickSettings({ enabled: false }));
+  check("초기 세션 비활성", (await page.evaluate(() => window.__cb.sessionActive())) === false);
+  // 헤드리스에는 캡처할 실제 화면이 없으므로 canvas.captureStream 을 주입해
+  // getDisplayMedia 이후의 전체 파이프라인(유지/즉시 grab/해제/UI)을 검증한다
+  await page.evaluate(() => window.__cb.connectSessionForTest());
+  check("세션 연결됨", await page.evaluate(() => window.__cb.sessionActive()));
+  check("LIVE 배지 표시", await page.locator("#live-badge").isVisible());
+  check(
+    "연결 버튼이 해제 상태로 전환",
+    (await page.locator("#cam-live").textContent())?.includes("해제"),
+  );
+  await page.locator("#shutter").click(); // 선택창 없이 즉시 캡처
+  await page.waitForTimeout(400);
+  let capState = await page.evaluate(() => window.__cb.getState());
+  check(
+    "즉시 캡처 결과가 스트림 크기(320×200)와 일치",
+    capState.baseSize?.[0] === 320 && capState.baseSize?.[1] === 200,
+    JSON.stringify(capState.baseSize),
+  );
+  await page.locator("#shutter").click(); // 연속 촬영에도 세션 유지
+  await page.waitForTimeout(300);
+  check("연속 촬영 후에도 세션 유지", await page.evaluate(() => window.__cb.sessionActive()));
+
+  console.log("\n[12] 퀵 캡처 (자동 동작 + 플로팅 썸네일)");
+  await page.evaluate(() =>
+    window.__cb.setQuickSettings({
+      enabled: true,
+      autoTrim: false,
+      autoCopy: false,
+      autoSave: false,
+      thumbnailSec: 8,
+    }),
+  );
+  await page.locator("#shutter").click();
+  await page.waitForTimeout(500);
+  check("플로팅 썸네일 표시", await page.locator("#quick-thumb").isVisible());
+  await page.locator("#qt-close").click();
+  await page.waitForTimeout(400);
+  check("썸네일 닫기", await page.locator("#quick-thumb").isHidden());
+  await page.locator("#cam-live").click(); // 실제 UI 버튼으로 세션 해제
+  await page.waitForTimeout(200);
+  check("세션 해제됨", (await page.evaluate(() => window.__cb.sessionActive())) === false);
+  check("LIVE 배지 사라짐", await page.locator("#live-badge").isHidden());
+
+  console.log("\n[13] PiP 위젯 (지원 브라우저에서만)");
+  const widgetSupported = await page.evaluate(() => window.__cb.widgetSupported());
+  if (widgetSupported) {
+    await page.locator("#cam-widget").click();
+    await page.waitForTimeout(600);
+    check("위젯 열림", await page.evaluate(() => window.__cb.isWidgetOpen()));
+    await page.locator("#cam-widget").click();
+    await page.waitForTimeout(400);
+    check("위젯 닫힘", (await page.evaluate(() => window.__cb.isWidgetOpen())) === false);
+  } else {
+    console.log("  ⏭️ Document PiP 미지원 환경 — 위젯 테스트 건너뜀 (지원 감지 로직은 통과)");
+  }
+
   if (failures === 0) {
     console.log("\n🎉 e2e 스모크 테스트 전체 통과");
   } else {

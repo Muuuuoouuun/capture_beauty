@@ -34,10 +34,13 @@ import {
 } from "./render";
 import {
   canvasToAnalysisBase64,
+  canvasToBlob,
   copyCanvasToClipboard,
   downloadCanvas,
   type ExportFormat,
 } from "./exporter";
+import { CaptureSession, type QuickSettings } from "./quickcapture";
+import { isWidgetSupported, openWidget, type WidgetHandle } from "./widget";
 import {
   AI_FILTERS,
   adjustmentsToFilterParams,
@@ -62,6 +65,8 @@ const MAX_HISTORY = 10;
 
 const settings: AppSettings = loadSettings();
 const manager = new ShortcutManager(settings.shortcuts ?? undefined);
+const session = new CaptureSession();
+let widget: WidgetHandle | null = null;
 
 const PREVIEW_MAX_DIM = 1600;
 
@@ -272,13 +277,19 @@ async function loadFromBlob(blob: Blob): Promise<void> {
   toast(`이미지를 불러왔습니다 (${canvas.width}×${canvas.height})`, "success");
 }
 
-async function doCaptureScreen(): Promise<void> {
+/**
+ * 셔터: 연속 캡처가 연결돼 있으면 선택창 없이 즉시 프레임을 뜨고,
+ * 아니면 일반 화면 캡처(선택창 1회)를 진행한다.
+ * fromWindow 는 위젯에서 눌렀을 때 그 창(클립보드 포커스 컨텍스트).
+ */
+async function doCaptureScreen(fromWindow?: Window): Promise<void> {
   const editorWasOpen = isEditorOpen();
   try {
-    const canvas = await captureScreen();
+    const canvas = session.active ? session.grab() : await captureScreen();
     setBaseCanvas(canvas, { pushHistory: true });
     if (!editorWasOpen) fireShutterFlash();
     toast(`화면을 캡처했습니다 (${canvas.width}×${canvas.height})`, "success");
+    await runQuickActions(fromWindow);
   } catch (err) {
     toast(err instanceof Error ? err.message : "화면 캡처 실패", "error");
   }
@@ -291,6 +302,194 @@ async function doPaste(): Promise<void> {
     toast("클립보드 이미지를 불러왔습니다.", "success");
   } catch (err) {
     toast(err instanceof Error ? err.message : "붙여넣기 실패", "error");
+  }
+}
+
+/* =========================================================
+ * 퀵 캡처 — 캡처 후 자동 동작 + 플로팅 썸네일 (ShareX/macOS 참고)
+ * ========================================================= */
+
+/** 포커스 문제(위젯에서 촬영 등)에 대비해 여러 창의 클립보드로 시도 */
+async function copyCanvasSmart(canvas: HTMLCanvasElement, fromWindow?: Window): Promise<void> {
+  const blob = await canvasToBlob(canvas, "png");
+  const item = new ClipboardItem({ "image/png": blob });
+  const targets = fromWindow && fromWindow !== window ? [fromWindow, window] : [window];
+  let lastErr: unknown = null;
+  for (const w of targets) {
+    try {
+      await w.navigator.clipboard.write([item]);
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("클립보드 복사에 실패했습니다.");
+}
+
+async function runQuickActions(fromWindow?: Window): Promise<void> {
+  const q = settings.quick;
+  if (!q.enabled || !baseCanvas) return;
+
+  if (q.autoTrim) doAutoTrim(true);
+
+  let exported: HTMLCanvasElement | null = null;
+  const getExported = () => (exported ??= renderExport().canvas);
+  const results: string[] = [];
+
+  if (q.autoCopy) {
+    try {
+      await copyCanvasSmart(getExported(), fromWindow);
+      results.push("📋 복사됨");
+    } catch {
+      results.push("복사 실패 (창에 포커스가 필요해요)");
+    }
+  }
+  if (q.autoSave) {
+    try {
+      await downloadCanvas(getExported(), $<HTMLSelectElement>("#export-format").value as ExportFormat);
+      results.push("💾 저장됨");
+    } catch {
+      results.push("저장 실패");
+    }
+  }
+  if (results.length) toast(`⚡ 퀵 캡처: ${results.join(" · ")}`, "success");
+
+  const thumbUrl = downscaleCanvas(baseCanvas, 480).toDataURL("image/jpeg", 0.8);
+  widget?.setThumbnail(thumbUrl);
+  if (q.thumbnailSec > 0 && !isEditorOpen()) showQuickThumb(thumbUrl);
+}
+
+/* ---------- 플로팅 썸네일 ---------- */
+
+let thumbTimer: number | null = null;
+
+function showQuickThumb(dataUrl: string): void {
+  $<HTMLImageElement>("#quick-thumb-img").src = dataUrl;
+  const box = $("#quick-thumb");
+  box.classList.remove("leaving");
+  box.hidden = false;
+  armThumbTimer();
+}
+
+function armThumbTimer(): void {
+  if (thumbTimer !== null) clearTimeout(thumbTimer);
+  thumbTimer = window.setTimeout(hideQuickThumb, Math.max(2, settings.quick.thumbnailSec) * 1000);
+}
+
+function hideQuickThumb(): void {
+  if (thumbTimer !== null) {
+    clearTimeout(thumbTimer);
+    thumbTimer = null;
+  }
+  const box = $("#quick-thumb");
+  if (box.hidden) return;
+  box.classList.add("leaving");
+  setTimeout(() => {
+    box.hidden = true;
+    box.classList.remove("leaving");
+  }, 240);
+}
+
+function setupQuickThumb(): void {
+  const box = $("#quick-thumb");
+  box.addEventListener("mouseenter", () => {
+    if (thumbTimer !== null) clearTimeout(thumbTimer);
+  });
+  box.addEventListener("mouseleave", armThumbTimer);
+  $("#quick-thumb-img").addEventListener("click", () => {
+    hideQuickThumb();
+    openEditor();
+  });
+  $("#qt-edit").addEventListener("click", () => {
+    hideQuickThumb();
+    openEditor();
+  });
+  $("#qt-close").addEventListener("click", hideQuickThumb);
+  $("#qt-copy").addEventListener("click", () => {
+    void (async () => {
+      try {
+        await copyCanvasSmart(renderExport().canvas);
+        toast("클립보드에 복사했습니다.", "success");
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "복사 실패", "error");
+      }
+    })();
+  });
+  $("#qt-save").addEventListener("click", () => void doExport());
+}
+
+/* =========================================================
+ * 연속 캡처 세션 + PiP 위젯
+ * ========================================================= */
+
+function displayMediaFrom(w: Window): () => Promise<MediaStream> {
+  return () => w.navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+}
+
+function syncSessionUI(): void {
+  const active = session.active;
+  $("#live-badge").hidden = !active;
+  const btn = $("#cam-live");
+  btn.classList.toggle("active", active);
+  btn.textContent = active ? "⛔ 연결 해제" : "🔗 연속 캡처";
+  widget?.setSessionActive(active);
+}
+
+/** 연속 캡처 연결/해제. fromWindow 가 있으면 그 창(위젯)의 제스처로 권한 요청 */
+async function toggleSession(fromWindow?: Window): Promise<void> {
+  if (session.active) {
+    session.stop();
+    toast("연속 캡처를 해제했습니다.");
+    return;
+  }
+  try {
+    await session.connect(fromWindow ? displayMediaFrom(fromWindow) : undefined);
+    toast("화면이 연결되었습니다 — 이제 셔터를 누르면 선택창 없이 즉시 캡처됩니다.", "success");
+  } catch (err) {
+    toast(err instanceof Error ? err.message : "화면 연결 실패", "error");
+  }
+}
+
+async function toggleWidget(): Promise<void> {
+  if (widget) {
+    widget.close();
+    return; // pagehide 콜백이 widget 을 정리
+  }
+  if (!isWidgetSupported()) {
+    toast("이 브라우저는 PiP 위젯을 지원하지 않습니다. (Chrome 116 이상)", "error");
+    return;
+  }
+  try {
+    widget = await openWidget({
+      onShutter: (w) => void widgetShutter(w),
+      onToggleSession: (w) => void toggleSession(w),
+      onOpenEditor: () => {
+        window.focus();
+        openEditor();
+      },
+      onClosed: () => {
+        widget = null;
+      },
+    });
+    widget.setSessionActive(session.active);
+    toast("캡처 위젯이 열렸습니다 — 모든 창 위에 떠 있어요.", "success");
+  } catch (err) {
+    toast(err instanceof Error ? err.message : "위젯을 열지 못했습니다.", "error");
+  }
+}
+
+/** 위젯 셔터: 연결이 없으면 위젯 제스처로 연결부터, 이후엔 즉시 촬영 */
+async function widgetShutter(w: Window): Promise<void> {
+  try {
+    if (!session.active) {
+      widget?.setStatus("화면 선택 중…");
+      await session.connect(displayMediaFrom(w));
+    }
+    await doCaptureScreen(w);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "캡처 실패";
+    widget?.setStatus(msg);
+    toast(msg, "error");
   }
 }
 
@@ -885,6 +1084,34 @@ function applySmartBackground(id: string): void {
 let cancelRecording: (() => void) | null = null;
 
 function buildSettingsPanel(): void {
+  // 퀵 캡처 설정
+  const quickChecks: [string, keyof Omit<QuickSettings, "thumbnailSec">][] = [
+    ["#qk-enabled", "enabled"],
+    ["#qk-trim", "autoTrim"],
+    ["#qk-copy", "autoCopy"],
+    ["#qk-save", "autoSave"],
+  ];
+  for (const [sel, key] of quickChecks) {
+    const cb = $<HTMLInputElement>(sel);
+    cb.checked = settings.quick[key];
+    cb.addEventListener("change", () => {
+      settings.quick[key] = cb.checked;
+      saveSettings(settings);
+    });
+  }
+  const qkSliders = $("#qk-sliders");
+  const { el: thumbSlider } = makeSliderRow(
+    "썸네일(초)",
+    0,
+    15,
+    () => settings.quick.thumbnailSec,
+    (v) => {
+      settings.quick.thumbnailSec = v;
+      saveSettings(settings);
+    },
+  );
+  qkSliders.appendChild(thumbSlider);
+
   renderShortcutList();
 
   $("#btn-shortcut-reset").addEventListener("click", () => {
@@ -1036,6 +1263,8 @@ function bindActions(): void {
   const firstAiFilter = AI_FILTERS[0];
   const handlers: Record<ActionId, () => void> = {
     "capture-screen": () => void doCaptureScreen(),
+    "toggle-session": () => void toggleSession(),
+    "toggle-widget": () => void toggleWidget(),
     "open-file": () => $<HTMLInputElement>("#file-input").click(),
     "paste-clipboard": () => void doPaste(),
     "export-image": () => void doExport(),
@@ -1084,6 +1313,8 @@ function bindInputSources(): void {
   // 카메라 화면 (캡처 모드)
   $("#shutter").addEventListener("click", () => void doCaptureScreen());
   $("#cam-paste").addEventListener("click", () => void doPaste());
+  $("#cam-live").addEventListener("click", () => void toggleSession());
+  $("#cam-widget").addEventListener("click", () => void toggleWidget());
   $("#cam-settings").addEventListener("click", () => openEditor("settings"));
   $("#act-edit").addEventListener("click", () => openEditor());
   $("#act-export").addEventListener("click", () => void doExport());
@@ -1220,6 +1451,14 @@ declare global {
       openEditor: (tab?: string) => void;
       closeEditor: () => void;
       isEditorOpen: () => boolean;
+      sessionActive: () => boolean;
+      stopSession: () => void;
+      /** e2e: getDisplayMedia 대신 canvas.captureStream 으로 세션 연결 */
+      connectSessionForTest: () => Promise<void>;
+      setQuickSettings: (partial: Partial<QuickSettings>) => void;
+      getQuickSettings: () => QuickSettings;
+      isWidgetOpen: () => boolean;
+      widgetSupported: () => boolean;
     };
   }
 }
@@ -1250,6 +1489,29 @@ function exposeTestHook(): void {
     openEditor,
     closeEditor,
     isEditorOpen,
+    sessionActive: () => session.active,
+    stopSession: () => session.stop(),
+    connectSessionForTest: async () => {
+      const c = document.createElement("canvas");
+      c.width = 320;
+      c.height = 200;
+      const ctx = c.getContext("2d")!;
+      let n = 0;
+      const iv = setInterval(() => {
+        ctx.fillStyle = `hsl(${(n++ * 7) % 360} 80% 60%)`;
+        ctx.fillRect(0, 0, c.width, c.height);
+      }, 40);
+      const stream = c.captureStream(20);
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => clearInterval(iv));
+      await session.connect(() => Promise.resolve(stream));
+    },
+    setQuickSettings: (partial) => {
+      settings.quick = { ...settings.quick, ...partial };
+      saveSettings(settings);
+    },
+    getQuickSettings: () => ({ ...settings.quick }),
+    isWidgetOpen: () => widget !== null,
+    widgetSupported: isWidgetSupported,
   };
 }
 
@@ -1267,6 +1529,9 @@ function init(): void {
   bindInputSources();
   setupStampDragging();
   setupWindow();
+  setupQuickThumb();
+  session.onStateChange = syncSessionUI;
+  syncSessionUI();
   renderStampList();
   syncBackgroundUI();
   exposeTestHook();
