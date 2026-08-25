@@ -199,6 +199,23 @@
                 <label><input type="checkbox" id="qk-save" /> 자동으로 파일 저장</label>
               </div>
               <div class="sliders" id="qk-sliders"></div>
+              <div id="native-settings" hidden>
+                <h2>전역 단축키 <span class="badge-note">데스크톱</span></h2>
+                <p class="desc">
+                  앱이 백그라운드/트레이에 있어도 동작합니다.
+                  형식 예: <code>CommandOrControl+Shift+1</code>, <code>Alt+F1</code>
+                </p>
+                <div class="field">
+                  <label>빠른 캡처</label>
+                  <input id="ns-quick" class="input" type="text" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label>캡처+편집</label>
+                  <input id="ns-edit" class="input" type="text" spellcheck="false" />
+                </div>
+                <button class="btn wide" id="ns-apply">전역 단축키 적용</button>
+                <p class="desc" id="ns-status"></p>
+              </div>
               <h2>단축키</h2>
               <p class="desc">항목을 클릭한 뒤 원하는 키 조합을 누르면 바로 설정됩니다. <kbd>Esc</kbd> 취소.</p>
               <ul class="shortcut-list" id="shortcut-list"></ul>

@@ -47,6 +47,21 @@ Win+Shift+S(윈도우) / Cmd+Shift+5(맥) / ShareX·CleanShot·Snagit 의 "즉�
 - **캡처 후 자동 동작** (설정 탭) — 자동 여백 제거 / 클립보드 복사 / 파일 저장 토글
 - **플로팅 썸네일** — macOS 스타일로 우하단에 잠깐 표시, 클릭하면 그때만 편집 창이 열립니다
 
+## 🖥️ 데스크톱 앱 (Electron)
+
+웹에서 불가능한 마지막 조각까지 — **전역 단축키 · 트레이 · 완전 무선택창 캡처**:
+
+```bash
+npm run build && npm run desktop      # 검증: npm run e2e:desktop (리눅스 헤드리스: xvfb-run -a 붙여서)
+```
+
+- **전역 단축키** — 기본 `Ctrl/Cmd+Shift+1` 빠른 캡처(창을 띄우지 않고 촬영→자동 복사→알림),
+  `Ctrl/Cmd+Shift+2` 캡처 후 편집 창. 설정 탭 "전역 단축키"에서 변경, 영구 저장
+- **트레이 아이콘** — 빠른 캡처/캡처 후 편집/창 열기/종료. 창 닫기는 종료가 아니라 트레이로
+- **무선택창 캡처** — `desktopCapturer` 가 주 화면을 바로 뜨고, 캡처 직전 자기 창을 자동으로 숨겼다 복원.
+  연속 캡처(getDisplayMedia)도 자동 승인되어 선택창이 아예 없음
+- **OS 클립보드 직접 복사** — 창 포커스 없이도(백그라운드 캡처) 복사 완료
+
 ## 스탬프
 
 스탬프 탭에서 원클릭 프리셋을 제공합니다.
@@ -117,8 +132,14 @@ src/
 ├── exporter.ts    PNG/JPG/WebP 저장 · 클립보드 복사 · 분석용 다운스케일
 └── settings.ts    localStorage 설정 저장
 
-tests/             vitest 단위 테스트 (79개) — DOM 없이 순수 로직 검증
-scripts/e2e.mjs    Playwright 스모크 테스트 — 실제 Chromium 에서 전체 플로우 검증
+desktop/
+├── main.cjs       Electron 메인 — 트레이 · 전역 단축키 · desktopCapturer · 창 숨김/복원
+├── preload.cjs    contextBridge → window.native (렌더러 타입: src/native.ts)
+└── config.cjs     accelerator 검증/정규화 (단위 테스트 대상)
+
+tests/                     vitest 단위 테스트 — DOM 없이 순수 로직 검증
+scripts/e2e.mjs            Playwright 스모크 테스트 — 실제 Chromium 에서 웹 전체 플로우 검증
+scripts/e2e-desktop.mjs    Playwright _electron — 실제 Electron 에서 데스크톱 기능 검증
 ```
 
 ## 브라우저 지원

@@ -41,6 +41,7 @@ import {
 } from "./exporter";
 import { CaptureSession, type QuickSettings } from "./quickcapture";
 import { isWidgetSupported, openWidget, type WidgetHandle } from "./widget";
+import { getNative } from "./native";
 import {
   AI_FILTERS,
   adjustmentsToFilterParams,
@@ -278,14 +279,19 @@ async function loadFromBlob(blob: Blob): Promise<void> {
 }
 
 /**
- * 셔터: 연속 캡처가 연결돼 있으면 선택창 없이 즉시 프레임을 뜨고,
- * 아니면 일반 화면 캡처(선택창 1회)를 진행한다.
+ * 셔터 우선순위: 데스크톱 래퍼(창 자동 숨김 + 선택창 없음) →
+ * 연속 캡처 세션(선택창 없음) → 일반 화면 캡처(선택창 1회).
  * fromWindow 는 위젯에서 눌렀을 때 그 창(클립보드 포커스 컨텍스트).
  */
 async function doCaptureScreen(fromWindow?: Window): Promise<void> {
   const editorWasOpen = isEditorOpen();
   try {
-    const canvas = session.active ? session.grab() : await captureScreen();
+    const native = getNative();
+    const canvas = native
+      ? await canvasFromDataUrl(await native.captureNow())
+      : session.active
+        ? session.grab()
+        : await captureScreen();
     setBaseCanvas(canvas, { pushHistory: true });
     if (!editorWasOpen) fireShutterFlash();
     toast(`화면을 캡처했습니다 (${canvas.width}×${canvas.height})`, "success");
@@ -311,6 +317,12 @@ async function doPaste(): Promise<void> {
 
 /** 포커스 문제(위젯에서 촬영 등)에 대비해 여러 창의 클립보드로 시도 */
 async function copyCanvasSmart(canvas: HTMLCanvasElement, fromWindow?: Window): Promise<void> {
+  const native = getNative();
+  if (native) {
+    // 데스크톱: OS 클립보드에 직접 복사 — 창 포커스 불필요
+    await native.copyImage(canvas.toDataURL("image/png"));
+    return;
+  }
   const blob = await canvasToBlob(canvas, "png");
   const item = new ClipboardItem({ "image/png": blob });
   const targets = fromWindow && fromWindow !== window ? [fromWindow, window] : [window];
@@ -1383,6 +1395,58 @@ function bindInputSources(): void {
 }
 
 /* =========================================================
+ * 데스크톱 래퍼 연동 (Electron — 전역 단축키/트레이 캡처 수신)
+ * ========================================================= */
+
+function setupNative(): void {
+  const native = getNative();
+  if (!native) return;
+  document.body.classList.add("native");
+
+  // 전역 단축키 설정 UI
+  $("#native-settings").hidden = false;
+  const quickInput = $<HTMLInputElement>("#ns-quick");
+  const editInput = $<HTMLInputElement>("#ns-edit");
+  void native.getGlobalShortcuts().then((s) => {
+    quickInput.value = s.quick;
+    editInput.value = s.edit;
+  });
+  $("#ns-apply").addEventListener("click", () => {
+    void (async () => {
+      const res = await native.setGlobalShortcuts({
+        quick: quickInput.value.trim(),
+        edit: editInput.value.trim(),
+      });
+      quickInput.value = res.applied.quick;
+      editInput.value = res.applied.edit;
+      $("#ns-status").textContent = res.ok
+        ? "✅ 적용되었습니다. 앱이 백그라운드여도 동작합니다."
+        : `⚠️ 등록 실패: ${res.failed.join(", ")} — 형식 오류거나 다른 앱이 사용 중입니다.`;
+      toast(
+        res.ok ? "전역 단축키를 적용했습니다." : "일부 전역 단축키 등록에 실패했습니다.",
+        res.ok ? "success" : "error",
+      );
+    })();
+  });
+
+  // 전역 단축키/트레이에서 캡처된 이미지 수신 → 퀵 파이프라인
+  native.onCaptured((payload) => {
+    void (async () => {
+      try {
+        const canvas = await canvasFromDataUrl(payload.dataUrl);
+        setBaseCanvas(canvas, { pushHistory: true });
+        if (!payload.openEditor && !isEditorOpen()) fireShutterFlash();
+        toast(`화면을 캡처했습니다 (${canvas.width}×${canvas.height})`, "success");
+        await runQuickActions();
+        if (payload.openEditor) openEditor();
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "캡처 처리 실패", "error");
+      }
+    })();
+  });
+}
+
+/* =========================================================
  * 프로그램 창 — 드래그 이동 / 신호등 버튼
  * ========================================================= */
 
@@ -1530,6 +1594,7 @@ function init(): void {
   setupStampDragging();
   setupWindow();
   setupQuickThumb();
+  setupNative();
   session.onStateChange = syncSessionUI;
   syncSessionUI();
   renderStampList();

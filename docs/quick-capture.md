@@ -57,16 +57,34 @@
   플로팅 썸네일 (몇 초)  ── 클릭 ──▶  편집 창 (원할 때만)
 ```
 
-## 4. 한계와 네이티브 로드맵
+## 4. 데스크톱 래퍼 (Electron — 구현됨, `desktop/`)
 
-웹에서 불가능한 나머지 두 조각은 얇은 네이티브 래퍼로 해결할 수 있다 (차기 단계):
+웹에서 불가능했던 마지막 조각을 얇은 Electron 래퍼로 채웠다. 렌더러는 웹앱(dist/)을 그대로 재사용한다.
 
-- **Tauri/Electron 래퍼**: 전역 단축키(`globalShortcut`) → 창 숨긴 채 캡처, OS 트레이 아이콘,
-  영역 선택 오버레이(투명 전체화면 창), 저장 위치 지정. 렌더러는 지금의 웹앱을 그대로 재사용.
-- **PWA 설치**: 설치형 아이콘/독립 창으로 진입 마찰 감소 (전역 단축키는 여전히 불가).
+```bash
+npm run build && npm run desktop
+```
+
+| 웹의 한계 | 데스크톱에서의 해결 |
+|---|---|
+| 전역 단축키 불가 | `globalShortcut` — 기본 `Ctrl/Cmd+Shift+1` 빠른 캡처(창 안 뜸, 퀵 동작만), `Ctrl/Cmd+Shift+2` 캡처 후 편집. 설정 탭 "전역 단축키" 섹션에서 변경·영구 저장 |
+| 트레이 불가 | 트레이 아이콘 + 메뉴(빠른 캡처/캡처 후 편집/창 열기/종료). 창 닫기 = 트레이로 최소화 |
+| 캡처마다 선택창 | `desktopCapturer` 로 주 화면을 **선택창 없이** 즉시 캡처. 렌더러의 `getDisplayMedia` 도 자동 승인 → 연속 캡처 역시 무선택창 |
+| 자기 창이 찍힘 | 캡처 직전 창 자동 숨김(280ms) 후 복원 |
+| 클립보드 포커스 제약 | 메인 프로세스가 OS 클립보드에 직접 복사 (`ClipboardItem`) — 백그라운드에서도 동작 |
+
+구성: `desktop/main.cjs`(메인 프로세스) · `desktop/preload.cjs`(contextBridge → `window.native`) ·
+`desktop/config.cjs`(accelerator 검증, 단위 테스트 대상) · `src/native.ts`(렌더러 브리지 타입/연동).
+배포 패키징이 필요하면 `electron-builder` 를 얹으면 된다.
+
+남은 아이디어: 영역(부분) 선택 오버레이 — 투명 전체화면 창으로 구현 가능. PWA 설치는 선택지로 유지.
 
 ## 5. 검증
 
-- `scripts/e2e.mjs` [11]~[13]: 세션 유지→즉시 grab→해제(스트림 주입으로 결정적 검증),
+- `scripts/e2e.mjs` [11]~[13] (웹): 세션 유지→즉시 grab→해제(스트림 주입으로 결정적 검증),
   퀵 캡처 썸네일 표시/닫기, PiP 위젯 열기/닫기 — 실제 Chromium 에서 통과.
-- `tests/quickcapture.test.ts`: 퀵 설정 정규화/저장 라운드트립.
+- `scripts/e2e-desktop.mjs` (데스크톱): 실제 Electron 을 Xvfb 에서 구동 —
+  전역 단축키 등록/변경/정규화, desktopCapturer 실화면 캡처, 셔터 시 창 숨김·복원,
+  전역 단축키 캡처→퀵 파이프라인→OS 클립보드 복사 확인, 닫기=트레이 유지. 전체 통과.
+  (리눅스 헤드리스에서는 `xvfb-run -a npm run e2e:desktop`)
+- `tests/quickcapture.test.ts`, `tests/desktop-config.test.ts`: 퀵 설정·accelerator 정규화.
