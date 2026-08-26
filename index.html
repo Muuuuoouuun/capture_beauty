@@ -11,10 +11,10 @@
     <!-- ================= 캡처 모드 (기본, 사진기 스타일) ================= -->
     <div id="capture-view">
       <div class="cam-topline">
-        <div class="brand">📸 <strong>Capture Beauty</strong></div>
+        <div class="brand"><span id="brand-logo"></span> <strong>Capture Beauty</strong></div>
         <div class="cam-topline-right">
           <span id="live-badge" class="live-badge" hidden>● LIVE</span>
-          <button id="cam-settings" class="icon-btn" title="설정 (편집 창)">⚙️</button>
+          <button id="cam-settings" class="icon-btn" title="설정 (편집 창)"></button>
         </div>
       </div>
 
@@ -56,55 +56,52 @@
       </div>
 
       <div class="capture-actions" id="capture-actions" hidden>
-        <button id="act-edit" class="btn primary big">✏️ 편집</button>
-        <button id="act-crop" class="btn big" title="점선 영역을 드래그해 잘라내기">⬚ 자르기</button>
-        <button id="act-export" class="btn big">💾 저장</button>
-        <button id="act-copy" class="btn big">📤 복사</button>
+        <button id="act-edit" class="btn primary big">편집</button>
+        <button id="act-crop" class="btn big" title="점선 영역을 드래그해 잘라내기">자르기</button>
+        <button id="act-export" class="btn big">저장</button>
+        <button id="act-copy" class="btn big">복사</button>
       </div>
 
-      <!-- 🎞️ 이 세션에서 촬영한 샷들 (필름 스트립) -->
+      <!-- 이 세션에서 촬영한 샷들 (필름 스트립) -->
       <div class="shot-strip" id="shot-strip" hidden>
-        <span class="deck-label" id="shot-strip-label">🎞️ 샷</span>
+        <span class="deck-label" id="shot-strip-label">샷</span>
         <div class="shot-items scroll-x" id="shot-items"></div>
         <div class="shot-strip-tools">
-          <button id="shots-save-all" class="chip" title="모든 샷을 순서대로 저장">💾 모두</button>
-          <button id="shots-clear" class="chip" title="샷 기록 비우기">🗑️</button>
+          <button id="shots-save-all" class="chip" title="모든 샷을 순서대로 저장">모두</button>
+          <button id="shots-clear" class="chip" title="샷 기록 비우기"></button>
         </div>
       </div>
 
-      <!-- 덱 토글 + 설정된 요소 요약 (미니멀 캡처 화면) -->
+      <!-- 도구 토글 + 퀵 칩(펼침 시) + 설정된 요소 요약(접힘 시) -->
       <div class="deck-bar">
-        <button id="deck-toggle" class="chip" title="꾸미기 도구 열기/접기">🎛️ 도구</button>
+        <button id="deck-toggle" class="chip" title="꾸미기 도구 열기/접기">도구</button>
+        <div class="deck-items" id="quick-chips" hidden>
+          <button id="cam-live" class="chip" title="화면을 한 번만 연결하면 이후 셔터는 선택창 없이 즉시 찍힙니다">연속 캡처</button>
+          <button id="cam-widget" class="chip" title="항상 위에 떠 있는 초소형 캡처 위젯 (PiP)">위젯</button>
+          <button id="qk-chip" class="chip" title="캡처 후 자동 동작 — 클릭해서 설정">캡처 후</button>
+        </div>
         <div class="deck-items" id="deck-summary"></div>
       </div>
 
-      <!-- 홈 덱: 퀵 · 룩 · 스탬프 -->
+      <!-- 홈 덱: 룩 · 도장 · 프리셋 -->
       <div class="home-deck" id="home-deck" hidden>
         <div class="deck-row">
-          <span class="deck-label">⚡ 퀵</span>
-          <div class="deck-items">
-            <button id="cam-live" class="chip" title="화면을 한 번만 연결하면 이후 셔터는 선택창 없이 즉시 찍힙니다">🔗 연속 캡처</button>
-            <button id="cam-widget" class="chip" title="항상 위에 떠 있는 초소형 캡처 위젯 (PiP)">🧷 위젯</button>
-            <button id="qk-chip" class="chip" title="캡처 후 자동 동작 — 클릭해서 설정">⚡ 캡처 후: …</button>
-          </div>
-        </div>
-        <div class="deck-row">
-          <span class="deck-label">🎨 룩</span>
+          <span class="deck-label">룩</span>
           <div class="deck-items scroll-x" id="look-row"></div>
         </div>
         <div class="deck-row">
-          <span class="deck-label">🖃 도장</span>
+          <span class="deck-label">도장</span>
           <div class="deck-items scroll-x" id="fun-row"></div>
         </div>
         <div class="deck-row">
-          <span class="deck-label">📦 프리셋</span>
+          <span class="deck-label">프리셋</span>
           <div class="deck-items scroll-x" id="profile-row"
             title="지금 편집 상태(크기·비율·배경·필터·AI 보정 결과·스탬프)를 저장해두고, 선택하면 매 샷이 그 세팅으로 나옵니다"></div>
         </div>
       </div>
 
       <div class="camera-bar">
-        <button id="cam-open" class="icon-btn round" title="이미지 열기">📂</button>
+        <button id="cam-open" class="icon-btn round" title="이미지 열기"></button>
         <button id="shutter-region" class="icon-btn round" title="영역 캡처 — 드래그로 원하는 부분만 (G)">
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
             <rect x="3" y="3" width="16" height="16" rx="3"
@@ -116,7 +113,7 @@
           <button id="shutter" title="화면 캡처 (셔터)"><span class="shutter-core"></span></button>
           <div class="armed-note" id="armed-note" hidden></div>
         </div>
-        <button id="cam-paste" class="icon-btn round" title="클립보드 붙여넣기">📋</button>
+        <button id="cam-paste" class="icon-btn round" title="클립보드 붙여넣기"></button>
       </div>
 
       <input id="file-input" type="file" accept="image/*" hidden />
@@ -133,16 +130,16 @@
           </div>
           <div class="win-title">Capture Beauty — 편집</div>
           <div class="win-tools">
-            <button id="btn-capture" class="btn sm" title="다시 캡처">📸</button>
-            <button id="btn-undo" class="btn sm" title="실행 취소">↩️</button>
-            <button id="btn-reset" class="btn sm" title="편집 초기화">🧹</button>
+            <button id="btn-capture" class="btn sm" title="다시 캡처"></button>
+            <button id="btn-undo" class="btn sm" title="실행 취소"></button>
+            <button id="btn-reset" class="btn sm" title="편집 초기화"></button>
             <select id="export-format" class="select sm" title="저장 형식">
               <option value="png">PNG</option>
               <option value="jpeg">JPG</option>
               <option value="webp">WebP</option>
             </select>
-            <button id="btn-export" class="btn sm primary" title="저장">💾 저장</button>
-            <button id="btn-copy" class="btn sm" title="클립보드로 복사">📤</button>
+            <button id="btn-export" class="btn sm primary" title="저장">저장</button>
+            <button id="btn-copy" class="btn sm" title="클립보드로 복사"></button>
           </div>
         </div>
 
@@ -165,11 +162,11 @@
 
           <aside class="sidebar">
             <nav class="tabs" id="tabs">
-              <button class="tab active" data-tab="filters">🎨 필터</button>
-              <button class="tab" data-tab="ai">✨ AI</button>
-              <button class="tab" data-tab="stamps">🖃 스탬프</button>
-              <button class="tab" data-tab="background">🖼️ 배경</button>
-              <button class="tab" data-tab="settings">⚙️ 설정</button>
+              <button class="tab active" data-tab="filters">필터</button>
+              <button class="tab" data-tab="ai">AI</button>
+              <button class="tab" data-tab="stamps">스탬프</button>
+              <button class="tab" data-tab="background">배경</button>
+              <button class="tab" data-tab="settings">설정</button>
             </nav>
 
             <!-- 필터 -->
@@ -317,10 +314,10 @@
     <div class="quick-thumb" id="quick-thumb" hidden>
       <img id="quick-thumb-img" alt="방금 캡처" title="클릭하면 편집 창이 열립니다" />
       <div class="quick-thumb-actions">
-        <button id="qt-copy" class="btn sm" title="복사">📋</button>
-        <button id="qt-save" class="btn sm" title="저장">💾</button>
-        <button id="qt-edit" class="btn sm" title="편집">✏️</button>
-        <button id="qt-close" class="btn sm" title="닫기">✕</button>
+        <button id="qt-copy" class="btn sm" title="복사"></button>
+        <button id="qt-save" class="btn sm" title="저장"></button>
+        <button id="qt-edit" class="btn sm" title="편집"></button>
+        <button id="qt-close" class="btn sm" title="닫기"></button>
       </div>
     </div>
 

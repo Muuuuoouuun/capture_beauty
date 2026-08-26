@@ -47,6 +47,7 @@ import {
 import { CaptureSession, type QuickSettings } from "./quickcapture";
 import { isWidgetSupported, openWidget, type WidgetHandle } from "./widget";
 import { getNative } from "./native";
+import { applyIcon, icon, setLabel } from "./icons";
 import { getLook, LOOKS, pickRandomLook, RANDOM_LOOK_ID, type LookDef } from "./looks";
 import {
   buildProfile,
@@ -587,7 +588,7 @@ function renderShotStrip(): void {
   const strip = $("#shot-strip");
   const box = $("#shot-items");
   strip.hidden = shotHistory.length === 0;
-  $("#shot-strip-label").textContent = `🎞️ 샷 ${shotHistory.length}`;
+  $("#shot-strip-label").textContent = `샷 ${shotHistory.length}`;
   box.innerHTML = "";
   for (const shot of [...shotHistory].reverse()) {
     const card = document.createElement("button");
@@ -601,9 +602,9 @@ function renderShotStrip(): void {
     num.textContent = `#${shot.id}`;
     const actions = document.createElement("div");
     actions.className = "st-actions";
-    const mk = (label: string, title: string, fn: () => void) => {
+    const mk = (name: Parameters<typeof icon>[0], title: string, fn: () => void) => {
       const b = document.createElement("button");
-      b.textContent = label;
+      b.innerHTML = icon(name, 11);
       b.title = title;
       b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -611,9 +612,9 @@ function renderShotStrip(): void {
       });
       actions.appendChild(b);
     };
-    mk("📋", "복사", () => void copyShot(shot));
-    mk("💾", "저장", () => saveShot(shot));
-    mk("✕", "기록에서 삭제", () => deleteShot(shot.id));
+    mk("copy", "복사", () => void copyShot(shot));
+    mk("download", "저장", () => saveShot(shot));
+    mk("x", "기록에서 삭제", () => deleteShot(shot.id));
     card.append(img, num, actions);
     card.addEventListener("click", () => void loadShot(shot));
     box.appendChild(card);
@@ -694,7 +695,7 @@ function syncSessionUI(): void {
   $("#live-badge").hidden = !active;
   const btn = $("#cam-live");
   btn.classList.toggle("live", active);
-  btn.textContent = active ? "⛔ 연결 해제" : "🔗 연속 캡처";
+  setLabel(btn, active ? "연결 해제" : "연속 캡처");
   widget?.setSessionActive(active);
   syncDeckSummary();
 }
@@ -1536,22 +1537,22 @@ function syncArmedNote(): void {
   syncDeckSummary();
 }
 
-function refreshQuickChip(): void {
-  const chip = $("#qk-chip");
+function quickChipLabel(): string {
   const q = settings.quick;
-  if (!q.enabled) {
-    chip.textContent = "⚡ 캡처 후: 꺼짐";
-    chip.classList.remove("active");
-    return;
-  }
+  if (!q.enabled) return "캡처 후: 꺼짐";
   const bits = [
     q.autoTrim ? "트림" : null,
     q.autoCopy ? "복사" : null,
     q.autoSave ? "저장" : null,
     q.thumbnailSec > 0 ? "썸네일" : null,
   ].filter((v): v is string => v !== null);
-  chip.textContent = `⚡ 캡처 후: ${bits.length ? bits.join("·") : "켜짐"}`;
-  chip.classList.add("active");
+  return `캡처 후: ${bits.length ? bits.join("·") : "켜짐"}`;
+}
+
+function refreshQuickChip(): void {
+  const chip = $("#qk-chip");
+  setLabel(chip, quickChipLabel());
+  chip.classList.toggle("active", settings.quick.enabled);
   syncDeckSummary();
 }
 
@@ -1564,16 +1565,17 @@ function renderProfileRow(): void {
   const saveChip = document.createElement("button");
   saveChip.className = "chip save-profile";
   saveChip.id = "profile-save";
-  saveChip.textContent = "💾 현재 설정 저장";
+  applyIcon(saveChip, "floppy", "현재 설정 저장");
   saveChip.title = "지금 편집 상태(크기·비율·배경·필터·AI 보정 결과·스탬프)를 프리셋으로 저장";
   saveChip.addEventListener("click", () => {
     if (saveChip.querySelector("input")) return;
-    saveChip.textContent = "💾 ";
+    const lbl = saveChip.querySelector<HTMLElement>(".lbl")!;
+    lbl.textContent = "";
     const input = document.createElement("input");
     input.placeholder = "프리셋 이름 + Enter";
     input.maxLength = 24;
     input.value = "";
-    saveChip.appendChild(input);
+    lbl.appendChild(input);
     input.focus();
     const done = () => renderProfileRow();
     input.addEventListener("keydown", (e) => {
@@ -1639,8 +1641,9 @@ const HOME_STAMP_CHIPS = [
 
 function applyDeckState(): void {
   $("#home-deck").hidden = !settings.deckOpen;
+  $("#quick-chips").hidden = !settings.deckOpen;
   const toggle = $("#deck-toggle");
-  toggle.textContent = settings.deckOpen ? "🎛️ 도구 접기" : "🎛️ 도구";
+  setLabel(toggle, settings.deckOpen ? "도구 접기" : "도구");
   toggle.classList.toggle("active", settings.deckOpen);
   syncDeckSummary();
 }
@@ -1659,11 +1662,18 @@ function syncDeckSummary(): void {
 
   const addChip = (
     label: string,
-    opts: { title?: string; cls?: string; onClick?: () => void; onClear?: () => void } = {},
+    opts: {
+      title?: string;
+      cls?: string;
+      iconName?: Parameters<typeof icon>[0];
+      onClick?: () => void;
+      onClear?: () => void;
+    } = {},
   ) => {
     const chip = document.createElement("button");
     chip.className = `chip ${opts.cls ?? ""} ${opts.onClick ? "" : "summary"}`.trim();
-    chip.textContent = label;
+    if (opts.iconName) applyIcon(chip, opts.iconName, label);
+    else chip.textContent = label;
     if (opts.title) chip.title = opts.title;
     if (opts.onClick) chip.addEventListener("click", opts.onClick);
     if (opts.onClear) {
@@ -1693,15 +1703,16 @@ function syncDeckSummary(): void {
     });
   }
   if (armedStampIds.size) {
-    addChip(`🖃 스탬프 ${armedStampIds.size}`, {
+    addChip(`스탬프 ${armedStampIds.size}`, {
       title: "다음 샷에 추가될 스탬프 — 클릭해서 도구 열기",
       cls: "armed",
       onClick: toggleDeck,
     });
   }
   if (settings.quick.enabled) {
-    addChip($("#qk-chip").textContent ?? "⚡", {
+    addChip(quickChipLabel(), {
       title: "캡처 후 자동 동작 — 클릭해서 설정",
+      iconName: "zap",
       onClick: () => openEditor("settings"),
     });
   }
@@ -2302,10 +2313,48 @@ function exposeTestHook(): void {
 }
 
 /* =========================================================
+ * 아이콘 하이드레이션 — 크롬(버튼/칩)을 일관된 SVG 아이콘으로
+ * ========================================================= */
+
+function setupIcons(): void {
+  type Entry = [string, Parameters<typeof icon>[0], string?, number?];
+  const entries: Entry[] = [
+    ["#brand-logo", "camera", undefined, 18],
+    ["#cam-settings", "gear", undefined, 18],
+    ["#cam-open", "folder", undefined, 20],
+    ["#cam-paste", "clipboard", undefined, 20],
+    ["#deck-toggle", "sliders", "도구"],
+    ["#cam-live", "link", "연속 캡처"],
+    ["#cam-widget", "pin", "위젯"],
+    ["#qk-chip", "zap", "캡처 후"],
+    ["#act-edit", "pencil", "편집"],
+    ["#act-crop", "crop", "자르기"],
+    ["#act-export", "download", "저장"],
+    ["#act-copy", "copy", "복사"],
+    ["#btn-capture", "camera"],
+    ["#btn-undo", "undo"],
+    ["#btn-reset", "eraser"],
+    ["#btn-export", "download", "저장"],
+    ["#btn-copy", "copy"],
+    ["#qt-copy", "copy", undefined, 13],
+    ["#qt-save", "download", undefined, 13],
+    ["#qt-edit", "pencil", undefined, 13],
+    ["#qt-close", "x", undefined, 13],
+    ["#shots-save-all", "download", "모두", 13],
+    ["#shots-clear", "trash", undefined, 13],
+  ];
+  for (const [sel, name, label, size] of entries) {
+    const el = document.querySelector<HTMLElement>(sel);
+    if (el) applyIcon(el, name, label, size ?? 16);
+  }
+}
+
+/* =========================================================
  * 부트스트랩
  * ========================================================= */
 
 function init(): void {
+  setupIcons();
   buildFilterPanel();
   buildAiPanel();
   buildStampPanel();

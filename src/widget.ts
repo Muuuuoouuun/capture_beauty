@@ -25,6 +25,8 @@ declare global {
   }
 }
 
+import { icon } from "./icons";
+
 export function isWidgetSupported(): boolean {
   return typeof window !== "undefined" && !!window.documentPictureInPicture;
 }
@@ -84,7 +86,10 @@ const WIDGET_CSS = `
   }
   #w-shutter:active { transform: scale(0.93); }
   .col { display: flex; flex-direction: column; gap: 6px; }
-  .col button { width: 34px; height: 26px; font-size: 13px; }
+  .col button {
+    width: 34px; height: 26px; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
   #w-session.active { border-color: #e5484d; background: rgba(229,72,77,0.18); }
   #w-thumb-box {
     flex: 1;
@@ -139,11 +144,11 @@ export async function openWidget(callbacks: WidgetCallbacks): Promise<WidgetHand
   const sessionBtn = doc.createElement("button");
   sessionBtn.id = "w-session";
   sessionBtn.title = "연속 캡처 연결/해제";
-  sessionBtn.textContent = "🔗";
+  sessionBtn.innerHTML = icon("link", 14);
   const editorBtn = doc.createElement("button");
   editorBtn.id = "w-editor";
   editorBtn.title = "편집 창 열기";
-  editorBtn.textContent = "✏️";
+  editorBtn.innerHTML = icon("pencil", 14);
   col.append(sessionBtn, editorBtn);
 
   const thumbBox = doc.createElement("div");
@@ -168,7 +173,7 @@ export async function openWidget(callbacks: WidgetCallbacks): Promise<WidgetHand
     window: pip,
     setSessionActive(active: boolean) {
       sessionBtn.classList.toggle("active", active);
-      sessionBtn.textContent = active ? "⛔" : "🔗";
+      sessionBtn.innerHTML = icon(active ? "x" : "link", 14);
       sessionBtn.title = active ? "연속 캡처 해제" : "연속 캡처 연결";
       status.innerHTML = active
         ? '<span class="live-dot">●</span> 연결됨 — 셔터를 누르면 즉시 캡처'

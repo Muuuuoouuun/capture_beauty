@@ -67,7 +67,8 @@ body {
   letter-spacing: 0.6px;
   animation: pulse 1.4s infinite;
 }
-.brand { font-size: 16px; letter-spacing: 0.2px; }
+.brand { font-size: 16px; letter-spacing: 0.2px; display: inline-flex; align-items: center; gap: 7px; }
+.brand #brand-logo { display: inline-flex; color: var(--accent); }
 .brand strong {
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   -webkit-background-clip: text;
@@ -76,6 +77,10 @@ body {
 }
 
 .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -211,8 +216,9 @@ body {
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
-  font-size: 10px;
-  line-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   padding: 0;
 }
@@ -283,6 +289,9 @@ body {
 }
 
 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -590,6 +599,10 @@ body {
  * ========================================================= */
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -600,6 +613,8 @@ body {
   transition: background 0.15s, border-color 0.15s, transform 0.05s;
   white-space: nowrap;
 }
+
+.icn { flex-shrink: 0; display: block; }
 .btn:hover { background: #2b2b3a; border-color: #3d3d50; }
 .btn:active { transform: translateY(1px); }
 .btn.primary {
