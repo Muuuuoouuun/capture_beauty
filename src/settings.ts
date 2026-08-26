@@ -10,10 +10,18 @@ export interface AppSettings {
   apiKey: string;
   transformEndpoint: string;
   quick: QuickSettings;
+  /** 홈 화면 도구 덱 펼침 여부 — 기본은 접힘(미니멀 캡처 화면) */
+  deckOpen: boolean;
 }
 
 export function defaultSettings(): AppSettings {
-  return { shortcuts: null, apiKey: "", transformEndpoint: "", quick: defaultQuickSettings() };
+  return {
+    shortcuts: null,
+    apiKey: "",
+    transformEndpoint: "",
+    quick: defaultQuickSettings(),
+    deckOpen: false,
+  };
 }
 
 export function loadSettings(storage: Pick<Storage, "getItem"> = safeStorage()): AppSettings {
@@ -27,6 +35,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> = safeStorage()):
       apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : "",
       transformEndpoint: typeof parsed.transformEndpoint === "string" ? parsed.transformEndpoint : "",
       quick: normalizeQuickSettings(parsed.quick),
+      deckOpen: typeof parsed.deckOpen === "boolean" ? parsed.deckOpen : d.deckOpen,
     };
   } catch {
     return d;
@@ -45,6 +54,7 @@ export function saveSettings(
         apiKey: settings.apiKey,
         transformEndpoint: settings.transformEndpoint,
         quick: settings.quick,
+        deckOpen: settings.deckOpen,
       }),
     );
   } catch {

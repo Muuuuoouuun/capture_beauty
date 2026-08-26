@@ -24,11 +24,32 @@
         <div class="vf-corner bl"></div>
         <div class="vf-corner br"></div>
         <div class="vf-hint" id="vf-hint">
-          <div class="vf-icon">🖥️</div>
-          <p>아래에서 룩을 고르고 셔터를 누르세요 — 캡처와 꾸미기가 한 번에 끝납니다</p>
+          <!-- 카메라 그래픽 -->
+          <svg class="vf-camera" width="150" height="112" viewBox="0 0 150 112" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="camBody" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ff5c8a" />
+                <stop offset="1" stop-color="#7c6cff" />
+              </linearGradient>
+            </defs>
+            <!-- 점선 선택 틀 (애플 캡처 모티프) -->
+            <rect x="3" y="3" width="144" height="106" rx="12"
+              stroke="rgba(232,232,239,0.35)" stroke-width="1.6" stroke-dasharray="7 6" />
+            <!-- 카메라 바디 -->
+            <rect x="27" y="34" width="96" height="58" rx="11" fill="url(#camBody)" />
+            <rect x="58" y="24" width="34" height="14" rx="5" fill="url(#camBody)" />
+            <!-- 플래시 -->
+            <circle class="cam-flash" cx="111" cy="46" r="4" fill="#fff8d6" />
+            <!-- 렌즈 -->
+            <circle cx="75" cy="62" r="19" fill="#14141c" />
+            <circle cx="75" cy="62" r="13" fill="#2a2a38" />
+            <circle class="cam-lens" cx="75" cy="62" r="8" fill="#7c6cff" />
+            <circle cx="71" cy="58" r="2.6" fill="#ffffff" opacity="0.85" />
+          </svg>
+          <p>룩을 고르고 셔터를 누르세요 — 캡처와 꾸미기가 한 번에 끝납니다</p>
           <p class="hint">
-            <kbd id="hint-capture">Ctrl+Shift+S</kbd> 캡처 ·
-            <kbd>Ctrl+V</kbd> 붙여넣기 · 이미지 드래그&드롭 지원
+            <kbd id="hint-capture">Ctrl+Shift+S</kbd> 전체 캡처 ·
+            <kbd id="hint-region">G</kbd> 영역 캡처 · <kbd>Ctrl+V</kbd> 붙여넣기 · 드래그&드롭 지원
           </p>
         </div>
         <canvas id="camera-preview" hidden title="클릭하면 편집 창이 열립니다"></canvas>
@@ -36,12 +57,19 @@
 
       <div class="capture-actions" id="capture-actions" hidden>
         <button id="act-edit" class="btn primary big">✏️ 편집</button>
+        <button id="act-crop" class="btn big" title="점선 영역을 드래그해 잘라내기">⬚ 자르기</button>
         <button id="act-export" class="btn big">💾 저장</button>
         <button id="act-copy" class="btn big">📤 복사</button>
       </div>
 
+      <!-- 덱 토글 + 설정된 요소 요약 (미니멀 캡처 화면) -->
+      <div class="deck-bar">
+        <button id="deck-toggle" class="chip" title="꾸미기 도구 열기/접기">🎛️ 도구</button>
+        <div class="deck-items" id="deck-summary"></div>
+      </div>
+
       <!-- 홈 덱: 퀵 · 룩 · 스탬프 -->
-      <div class="home-deck" id="home-deck">
+      <div class="home-deck" id="home-deck" hidden>
         <div class="deck-row">
           <span class="deck-label">⚡ 퀵</span>
           <div class="deck-items">
@@ -62,6 +90,13 @@
 
       <div class="camera-bar">
         <button id="cam-open" class="icon-btn round" title="이미지 열기">📂</button>
+        <button id="shutter-region" class="icon-btn round" title="영역 캡처 — 드래그로 원하는 부분만 (G)">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+            <rect x="3" y="3" width="16" height="16" rx="3"
+              stroke="currentColor" stroke-width="1.8" stroke-dasharray="3.4 2.8" />
+            <circle cx="11" cy="11" r="2.1" fill="currentColor" />
+          </svg>
+        </button>
         <div class="shutter-col">
           <button id="shutter" title="화면 캡처 (셔터)"><span class="shutter-core"></span></button>
           <div class="armed-note" id="armed-note" hidden></div>

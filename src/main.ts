@@ -26,12 +26,14 @@ import { loadSettings, saveSettings, type AppSettings } from "./settings";
 import { canvasFromBlob, canvasFromClipboard, canvasFromDataUrl, captureScreen } from "./capture";
 import {
   cropCanvas,
+  cropCanvasRect,
   downscaleCanvas,
   invalidateFilterCache,
   rawFromCanvas,
   renderComposite,
   type RenderResult,
 } from "./render";
+import { selectRegion } from "./region";
 import {
   canvasToAnalysisBase64,
   canvasToBlob,
@@ -188,12 +190,57 @@ function renderPreview(): void {
   lastRender = result;
   previewEl.width = result.canvas.width;
   previewEl.height = result.canvas.height;
-  previewEl.getContext("2d")!.drawImage(result.canvas, 0, 0);
-  // 카메라 뷰파인더에도 같은 결과 표시 (찍은 사진 리뷰)
+  const pctx = previewEl.getContext("2d")!;
+  pctx.drawImage(result.canvas, 0, 0);
+  drawSelectionDecor(pctx);
+  // 카메라 뷰파인더에도 같은 결과 표시 (찍은 사진 리뷰 — 선택 표시는 제외)
   cameraPreviewEl.width = result.canvas.width;
   cameraPreviewEl.height = result.canvas.height;
   cameraPreviewEl.getContext("2d")!.drawImage(result.canvas, 0, 0);
   updateStatus(result);
+}
+
+/** 애플 캡처 느낌의 점선 선택 표시 — 편집 미리보기 전용 (내보내기에는 없음) */
+function drawSelectionDecor(ctx: CanvasRenderingContext2D): void {
+  if (!lastRender || !selectedStampId) return;
+  const b = lastRender.stampBounds.get(selectedStampId);
+  if (!b) return;
+  const r = lastRender.imageRect;
+  ctx.save();
+
+  // 이미지 틀 — 옅은 점선
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+
+  // 선택 스탬프 — 대비 점선(검정 위 흰색) + 코너 핸들
+  const x = b.cx - b.w / 2;
+  const y = b.cy - b.h / 2;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = "rgba(0,0,0,0.75)";
+  ctx.strokeRect(x, y, b.w, b.h);
+  ctx.lineDashOffset = 5;
+  ctx.strokeStyle = "#ffffff";
+  ctx.strokeRect(x, y, b.w, b.h);
+  ctx.setLineDash([]);
+  ctx.lineDashOffset = 0;
+  for (const [hx, hy] of [
+    [x, y],
+    [x + b.w, y],
+    [x, y + b.h],
+    [x + b.w, y + b.h],
+  ] as const) {
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "rgba(0,0,0,0.75)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(hx - 3.5, hy - 3.5, 7, 7);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** 저장/복사용 풀해상도 합성 */
@@ -307,6 +354,50 @@ async function doCaptureScreen(fromWindow?: Window): Promise<void> {
   } catch (err) {
     toast(err instanceof Error ? err.message : "화면 캡처 실패", "error");
   }
+}
+
+/**
+ * 영역 캡처 — 전체 스크린샷을 뜬 뒤 점선 오버레이에서 드래그로 영역 선택.
+ * 데스크톱에서는 오버레이 동안 창을 전체화면으로 전환해
+ * 스크린샷이 실제 화면과 1:1 로 겹쳐 보인다 (Win+Shift+S 느낌).
+ */
+async function doRegionCapture(): Promise<void> {
+  const native = getNative();
+  try {
+    const full = native
+      ? await canvasFromDataUrl(await native.captureNow())
+      : session.active
+        ? session.grab()
+        : await captureScreen();
+    native?.setFullScreen(true);
+    let rect: Awaited<ReturnType<typeof selectRegion>>;
+    try {
+      rect = await selectRegion(full);
+    } finally {
+      native?.setFullScreen(false);
+    }
+    if (!rect) {
+      toast("영역 선택이 취소되었습니다.");
+      return;
+    }
+    setBaseCanvas(cropCanvasRect(full, rect), { pushHistory: true });
+    if (!isEditorOpen()) fireShutterFlash();
+    toast(`영역을 캡처했습니다 (${rect.w}×${rect.h})`, "success");
+    applyShotExtras();
+    await runQuickActions();
+  } catch (err) {
+    toast(err instanceof Error ? err.message : "영역 캡처 실패", "error");
+  }
+}
+
+/** 현재 사진에서 점선 영역 선택으로 잘라내기 */
+async function doCropCurrent(): Promise<void> {
+  if (!requireImage()) return;
+  const rect = await selectRegion(baseCanvas!);
+  if (!rect) return;
+  pushHistory();
+  setBaseCanvas(cropCanvasRect(baseCanvas!, rect));
+  toast(`잘라냈습니다 (${rect.w}×${rect.h}) — ↩️ 로 되돌리기 가능`, "success");
 }
 
 async function doPaste(): Promise<void> {
@@ -454,6 +545,7 @@ function syncSessionUI(): void {
   btn.classList.toggle("live", active);
   btn.textContent = active ? "⛔ 연결 해제" : "🔗 연속 캡처";
   widget?.setSessionActive(active);
+  syncDeckSummary();
 }
 
 /** 연속 캡처 연결/해제. fromWindow 가 있으면 그 창(위젯)의 제스처로 권한 요청 */
@@ -854,6 +946,7 @@ function selectStamp(id: string | null): void {
   selectedStampId = id;
   renderStampList();
   refreshStampEditor();
+  requestRender(); // 점선 선택 표시 갱신
 }
 
 function renderStampList(): void {
@@ -1178,6 +1271,7 @@ function syncArmedNote(): void {
   if (armedStampIds.size) bits.push(`스탬프 ${armedStampIds.size}개`);
   note.hidden = bits.length === 0;
   note.textContent = bits.length ? `다음 샷: ${bits.join(" · ")}` : "";
+  syncDeckSummary();
 }
 
 function refreshQuickChip(): void {
@@ -1196,6 +1290,7 @@ function refreshQuickChip(): void {
   ].filter((v): v is string => v !== null);
   chip.textContent = `⚡ 캡처 후: ${bits.length ? bits.join("·") : "켜짐"}`;
   chip.classList.add("active");
+  syncDeckSummary();
 }
 
 const HOME_STAMP_CHIPS = [
@@ -1207,6 +1302,78 @@ const HOME_STAMP_CHIPS = [
   "badge-draft",
   "emoji-star",
 ];
+
+/* ---------- 덱 접기/펼치기 + 설정된 요소 요약 ---------- */
+
+function applyDeckState(): void {
+  $("#home-deck").hidden = !settings.deckOpen;
+  const toggle = $("#deck-toggle");
+  toggle.textContent = settings.deckOpen ? "🎛️ 도구 접기" : "🎛️ 도구";
+  toggle.classList.toggle("active", settings.deckOpen);
+  syncDeckSummary();
+}
+
+function toggleDeck(): void {
+  settings.deckOpen = !settings.deckOpen;
+  saveSettings(settings);
+  applyDeckState();
+}
+
+/** 덱이 접힌 상태에서는 "설정되어 있는 요소만" 요약 칩으로 표시 */
+function syncDeckSummary(): void {
+  const box = $("#deck-summary");
+  box.innerHTML = "";
+  if (settings.deckOpen) return; // 덱이 열려 있으면 요약 불필요
+
+  const addChip = (
+    label: string,
+    opts: { title?: string; cls?: string; onClick?: () => void; onClear?: () => void } = {},
+  ) => {
+    const chip = document.createElement("button");
+    chip.className = `chip ${opts.cls ?? ""} ${opts.onClick ? "" : "summary"}`.trim();
+    chip.textContent = label;
+    if (opts.title) chip.title = opts.title;
+    if (opts.onClick) chip.addEventListener("click", opts.onClick);
+    if (opts.onClear) {
+      const x = document.createElement("span");
+      x.className = "x";
+      x.textContent = "✕";
+      x.title = "해제";
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        opts.onClear!();
+      });
+      chip.appendChild(x);
+    }
+    box.appendChild(chip);
+  };
+
+  if (session.active) {
+    addChip("🔴 LIVE", { title: "연속 캡처 중 — 클릭해서 해제", cls: "live", onClick: () => void toggleSession() });
+  }
+  const look = getLook(selectedLookId);
+  if (look && look.id !== "look-none") {
+    addChip(`${look.emoji} ${look.name}`, {
+      title: "선택된 룩 — 클릭해서 도구 열기, ✕ 로 해제",
+      cls: "active",
+      onClick: toggleDeck,
+      onClear: () => selectLook("look-none"),
+    });
+  }
+  if (armedStampIds.size) {
+    addChip(`🖃 스탬프 ${armedStampIds.size}`, {
+      title: "다음 샷에 추가될 스탬프 — 클릭해서 도구 열기",
+      cls: "armed",
+      onClick: toggleDeck,
+    });
+  }
+  if (settings.quick.enabled) {
+    addChip($("#qk-chip").textContent ?? "⚡", {
+      title: "캡처 후 자동 동작 — 클릭해서 설정",
+      onClick: () => openEditor("settings"),
+    });
+  }
+}
 
 function buildHomeDeck(): void {
   const lookRow = $("#look-row");
@@ -1386,6 +1553,8 @@ function startRecordShortcut(id: ActionId, btn: HTMLButtonElement): void {
 function updateShortcutHints(): void {
   const hint = document.querySelector<HTMLElement>("#hint-capture");
   if (hint) hint.textContent = formatCombo(manager.getCombo("capture-screen"));
+  const regionHint = document.querySelector<HTMLElement>("#hint-region");
+  if (regionHint) regionHint.textContent = formatCombo(manager.getCombo("region-capture"));
 }
 
 /* =========================================================
@@ -1450,6 +1619,7 @@ function bindActions(): void {
   const firstAiFilter = AI_FILTERS[0];
   const handlers: Record<ActionId, () => void> = {
     "capture-screen": () => void doCaptureScreen(),
+    "region-capture": () => void doRegionCapture(),
     "toggle-session": () => void toggleSession(),
     "toggle-widget": () => void toggleWidget(),
     "open-file": () => $<HTMLInputElement>("#file-input").click(),
@@ -1499,11 +1669,14 @@ function bindActions(): void {
 function bindInputSources(): void {
   // 카메라 화면 (캡처 모드)
   $("#shutter").addEventListener("click", () => void doCaptureScreen());
+  $("#shutter-region").addEventListener("click", () => void doRegionCapture());
   $("#cam-paste").addEventListener("click", () => void doPaste());
   $("#cam-live").addEventListener("click", () => void toggleSession());
   $("#cam-widget").addEventListener("click", () => void toggleWidget());
   $("#cam-settings").addEventListener("click", () => openEditor("settings"));
+  $("#deck-toggle").addEventListener("click", toggleDeck);
   $("#act-edit").addEventListener("click", () => openEditor());
+  $("#act-crop").addEventListener("click", () => void doCropCurrent());
   $("#act-export").addEventListener("click", () => void doExport());
   $("#act-copy").addEventListener("click", () => void doCopy());
   cameraPreviewEl.addEventListener("click", () => openEditor());
@@ -1701,6 +1874,7 @@ declare global {
       widgetSupported: () => boolean;
       selectLook: (id: string) => void;
       getLookId: () => string;
+      getDeckOpen: () => boolean;
       toggleArmedStamp: (id: string) => void;
       getArmedStamps: () => string[];
     };
@@ -1759,6 +1933,7 @@ function exposeTestHook(): void {
     widgetSupported: isWidgetSupported,
     selectLook,
     getLookId: () => selectedLookId,
+    getDeckOpen: () => settings.deckOpen,
     toggleArmedStamp: (id) => {
       if (armedStampIds.has(id)) armedStampIds.delete(id);
       else armedStampIds.add(id);
@@ -1780,6 +1955,7 @@ function init(): void {
   buildBackgroundPanel();
   buildSettingsPanel();
   buildHomeDeck();
+  applyDeckState();
   bindActions();
   bindInputSources();
   setupStampDragging();

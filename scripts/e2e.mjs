@@ -55,10 +55,16 @@ try {
 
   await page.goto(`http://localhost:${PORT}/`);
 
-  console.log("\n[1] 캡처 모드 (사진기 화면) 로드");
+  console.log("\n[1] 캡처 모드 (사진기 화면) 로드 — 기본은 미니멀");
   check("타이틀", (await page.title()).includes("Capture Beauty"));
   check("셔터 버튼 표시", await page.locator("#shutter").isVisible());
-  check("뷰파인더 힌트 표시", await page.locator("#vf-hint").isVisible());
+  check("영역 캡처 버튼 표시", await page.locator("#shutter-region").isVisible());
+  check("카메라 그래픽(SVG) 표시", await page.locator(".vf-camera").isVisible());
+  check("도구 덱은 기본 접힘 (미니멀)", await page.locator("#home-deck").isHidden());
+  check(
+    "요약엔 설정된 요소만 (퀵 칩 1개)",
+    (await page.locator("#deck-summary .chip").count()) === 1,
+  );
   check("편집 창은 닫힘 상태", await page.locator("#editor-backdrop").isHidden());
   check("테스트 훅 노출", await page.evaluate(() => typeof window.__cb === "object"));
 
@@ -236,12 +242,16 @@ try {
   await page.locator("#qt-close").click();
   await page.waitForTimeout(400);
   check("썸네일 닫기", await page.locator("#quick-thumb").isHidden());
-  await page.locator("#cam-live").click(); // 실제 UI 버튼으로 세션 해제
+  // 미니멀 모드: 접힌 덱 대신 요약의 LIVE 칩으로 세션 해제
+  check("요약에 LIVE 칩 표시", await page.locator("#deck-summary .chip.live").isVisible());
+  await page.locator("#deck-summary .chip.live").click();
   await page.waitForTimeout(200);
   check("세션 해제됨", (await page.evaluate(() => window.__cb.sessionActive())) === false);
   check("LIVE 배지 사라짐", await page.locator("#live-badge").isHidden());
 
   console.log("\n[13] PiP 위젯 (지원 브라우저에서만)");
+  await page.locator("#deck-toggle").click(); // 덱 펼치기 (이후 단계들도 사용)
+  check("덱 펼침", await page.locator("#home-deck").isVisible());
   const widgetSupported = await page.evaluate(() => window.__cb.widgetSupported());
   if (widgetSupported) {
     await page.locator("#cam-widget").click();
@@ -255,6 +265,7 @@ try {
   }
 
   console.log("\n[14] 홈 덱 — 룩 즉시 적용 (이미지 있음)");
+  check("덱 여전히 펼침", await page.locator("#home-deck").isVisible());
   check("룩 카드 9개", (await page.locator("#look-row .look-card").count()) === 9);
   check("도장 칩 7개", (await page.locator("#fun-row .chip").count()) === 7);
   await page.locator("body").press("Shift+X"); // 편집 초기화
@@ -274,6 +285,7 @@ try {
   await page.reload();
   await page.waitForTimeout(400);
   check("리로드 후 이미지 없음", (await page.evaluate(() => window.__cb.getState())).hasImage === false);
+  check("덱 펼침 상태가 유지됨 (localStorage)", await page.evaluate(() => window.__cb.getDeckOpen()));
   await page.locator('[data-look="look-cinema"]').click(); // 룩 예약
   await page.locator('[data-stamp-chip="seal-approve"]').click(); // 도장 예약
   check("도장 칩 armed 표시", await page.locator('[data-stamp-chip="seal-approve"]').evaluate(
@@ -296,6 +308,44 @@ try {
   check("퀵 칩: 복사 표시", (await page.locator("#qk-chip").textContent())?.includes("복사"));
   await page.evaluate(() => window.__cb.setQuickSettings({ enabled: false }));
   check("퀵 칩: 꺼짐 표시", (await page.locator("#qk-chip").textContent())?.includes("꺼짐"));
+
+  console.log("\n[17] 영역 캡처 (점선 오버레이 드래그)");
+  await page.evaluate(() => {
+    window.__cb.selectLook("look-none");
+    return window.__cb.connectSessionForTest();
+  });
+  await page.locator("#shutter-region").click();
+  await page.waitForTimeout(500);
+  check("오버레이 표시", await page.locator("#region-overlay").isVisible());
+  check("점선(마칭앤츠) 테두리 요소 존재", (await page.locator(".region-ants rect").count()) === 1);
+  // 320×200 스트림이 1440×900 뷰포트에 contain → 정확히 4.5배, 오프셋 0
+  // (450,225)→(900,450) 드래그 = 이미지 (100,50)~(200,100) → 100×50 픽셀
+  await page.mouse.move(450, 225);
+  await page.mouse.down();
+  await page.mouse.move(700, 350, { steps: 4 });
+  const sizeBadge = await page.locator(".region-size").textContent();
+  check("크기 배지 실시간 표시", /\d+ × \d+/.test(sizeBadge ?? ""), sizeBadge ?? "");
+  await page.mouse.move(900, 450, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  check("오버레이 닫힘", (await page.locator("#region-overlay").count()) === 0);
+  state = await page.evaluate(() => window.__cb.getState());
+  check(
+    "선택 영역만 캡처됨 (100×50)",
+    state.baseSize?.[0] === 100 && state.baseSize?.[1] === 50,
+    JSON.stringify(state.baseSize),
+  );
+
+  console.log("\n[18] 현재 사진 자르기 + Esc 취소");
+  await page.locator("#act-crop").click();
+  await page.waitForTimeout(300);
+  check("자르기 오버레이 표시", await page.locator("#region-overlay").isVisible());
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  check("Esc 로 취소", (await page.locator("#region-overlay").count()) === 0);
+  state = await page.evaluate(() => window.__cb.getState());
+  check("취소 시 이미지 유지", state.baseSize?.[0] === 100 && state.baseSize?.[1] === 50);
+  await page.evaluate(() => window.__cb.stopSession());
 
   if (failures === 0) {
     console.log("\n🎉 e2e 스모크 테스트 전체 통과");

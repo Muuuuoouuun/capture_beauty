@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld("native", {
 
   hideWindow: () => ipcRenderer.send("native:hide"),
 
+  /** 영역 선택 중 전체화면 전환 (스크린샷을 실제 화면과 1:1 로) */
+  setFullScreen: (flag) => ipcRenderer.send("native:set-fullscreen", !!flag),
+
   /** 전역 단축키/트레이 캡처 결과 수신 */
   onCaptured: (cb) => {
     ipcRenderer.on("native:captured", (_event, payload) => cb(payload));

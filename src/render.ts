@@ -35,6 +35,18 @@ export function cropCanvas(source: HTMLCanvasElement, trim: TrimInsets): HTMLCan
   return out;
 }
 
+/** 임의 사각형으로 잘라낸 새 캔버스 */
+export function cropCanvasRect(
+  source: HTMLCanvasElement,
+  rect: { x: number; y: number; w: number; h: number },
+): HTMLCanvasElement {
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, Math.round(rect.w));
+  out.height = Math.max(1, Math.round(rect.h));
+  out.getContext("2d")!.drawImage(source, rect.x, rect.y, rect.w, rect.h, 0, 0, out.width, out.height);
+  return out;
+}
+
 /** 긴 변이 maxDim 을 넘으면 축소한 사본, 아니면 원본 그대로 */
 export function downscaleCanvas(source: HTMLCanvasElement, maxDim: number): HTMLCanvasElement {
   const scale = Math.min(1, maxDim / Math.max(source.width, source.height));

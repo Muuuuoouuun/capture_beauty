@@ -253,6 +253,7 @@ function setupIpc() {
     return { ok: failed.length === 0, failed, applied: { ...shortcuts } };
   });
   ipcMain.on("native:hide", () => mainWindow?.hide());
+  ipcMain.on("native:set-fullscreen", (_e, flag) => mainWindow?.setFullScreen(!!flag));
 }
 
 /* ---------- 라이프사이클 ---------- */

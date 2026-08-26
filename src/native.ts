@@ -32,6 +32,8 @@ export interface NativeBridge {
   getGlobalShortcuts(): Promise<GlobalShortcutsConfig>;
   setGlobalShortcuts(config: GlobalShortcutsConfig): Promise<SetShortcutsResult>;
   hideWindow(): void;
+  /** 영역 선택 오버레이 동안 창을 전체화면으로 — 스크린샷이 실제 화면과 1:1 로 겹쳐 보이게 */
+  setFullScreen(flag: boolean): void;
   onCaptured(cb: (payload: NativeCapturePayload) => void): void;
 }
 
