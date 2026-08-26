@@ -2,6 +2,8 @@ import type { ShortcutMap } from "./shortcuts";
 import { parseShortcutsValue } from "./shortcuts";
 import type { QuickSettings } from "./quickcapture";
 import { defaultQuickSettings, normalizeQuickSettings } from "./quickcapture";
+import type { CaptureProfile } from "./profiles";
+import { normalizeProfile, normalizeProfiles } from "./profiles";
 
 const STORAGE_KEY = "capture-beauty:settings:v1";
 
@@ -12,6 +14,10 @@ export interface AppSettings {
   quick: QuickSettings;
   /** 홈 화면 도구 덱 펼침 여부 — 기본은 접힘(미니멀 캡처 화면) */
   deckOpen: boolean;
+  /** 저장된 캡처 프로파일 (내 프리셋) */
+  profiles: CaptureProfile[];
+  /** 마지막으로 내보내기/복사에 쓰인 편집 상태 (자동 기억) */
+  lastProfile: CaptureProfile | null;
 }
 
 export function defaultSettings(): AppSettings {
@@ -21,6 +27,8 @@ export function defaultSettings(): AppSettings {
     transformEndpoint: "",
     quick: defaultQuickSettings(),
     deckOpen: false,
+    profiles: [],
+    lastProfile: null,
   };
 }
 
@@ -36,6 +44,8 @@ export function loadSettings(storage: Pick<Storage, "getItem"> = safeStorage()):
       transformEndpoint: typeof parsed.transformEndpoint === "string" ? parsed.transformEndpoint : "",
       quick: normalizeQuickSettings(parsed.quick),
       deckOpen: typeof parsed.deckOpen === "boolean" ? parsed.deckOpen : d.deckOpen,
+      profiles: normalizeProfiles(parsed.profiles),
+      lastProfile: normalizeProfile(parsed.lastProfile),
     };
   } catch {
     return d;
@@ -55,6 +65,8 @@ export function saveSettings(
         transformEndpoint: settings.transformEndpoint,
         quick: settings.quick,
         deckOpen: settings.deckOpen,
+        profiles: settings.profiles,
+        lastProfile: settings.lastProfile,
       }),
     );
   } catch {

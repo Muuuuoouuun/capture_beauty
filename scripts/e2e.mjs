@@ -347,6 +347,80 @@ try {
   check("취소 시 이미지 유지", state.baseSize?.[0] === 100 && state.baseSize?.[1] === 50);
   await page.evaluate(() => window.__cb.stopSession());
 
+  console.log("\n[19] 내 프리셋 (캡처 프로파일) — 저장 → 복원 → 착착착");
+  await page.locator("body").press("Shift+X"); // 초기화
+  await page.evaluate(async () => {
+    const c = document.createElement("canvas");
+    c.width = 1200; c.height = 750;
+    const x = c.getContext("2d");
+    x.fillStyle = "#eef2f7"; x.fillRect(0, 0, 1200, 750);
+    x.fillStyle = "#334155"; x.fillRect(120, 90, 960, 570);
+    await window.__cb.loadDataUrl(c.toDataURL("image/png"));
+  });
+  await page.locator('[data-look="look-cinema"]').click(); // 필터+배경+비율
+  await page.evaluate(() => window.__cb.openEditor("background"));
+  await page.locator("#out-width").selectOption("800"); // 출력 너비
+  await page.evaluate(() => window.__cb.closeEditor());
+  await page.evaluate(() => window.__cb.addStampPreset("seal-approve"));
+  // 저장: 칩 클릭 → 인라인 입력 → Enter
+  await page.locator("#profile-save").click();
+  await page.keyboard.type("발표용");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(200);
+  const profiles = await page.evaluate(() => window.__cb.getProfiles());
+  check("프리셋 저장됨", profiles.length === 1 && profiles[0].name === "발표용", JSON.stringify(profiles));
+  check("저장한 프리셋에 스탬프/출력폭 포함", profiles[0]?.stamps === 1 && profiles[0]?.outputWidth === 800);
+  check("저장 직후 촬영 스타일로 선택됨", (await page.evaluate(() => window.__cb.getLookId())) === profiles[0]?.id);
+  const exportW = await page.evaluate(async () => {
+    const url = window.__cb.exportDataUrl();
+    const img = new Image();
+    await new Promise((r) => { img.onload = r; img.src = url; });
+    return img.width;
+  });
+  check("출력 너비 800px 적용", exportW === 800, String(exportW));
+
+  await page.locator("body").press("Shift+X"); // 초기화
+  state = await page.evaluate(() => window.__cb.getState());
+  check(
+    "초기화 확인",
+    state.filters.contrast === 0 && state.stamps.length === 0 &&
+      (await page.evaluate(() => window.__cb.getOutputWidth())) === 0,
+  );
+  await page.locator(`[data-look="${profiles[0].id}"]`).click(); // 프리셋 카드 클릭 → 즉시 복원
+  state = await page.evaluate(() => window.__cb.getState());
+  check(
+    "프리셋으로 전체 복원 (필터·배경·비율·스탬프·출력폭)",
+    state.filters.contrast === 18 && state.bg.preset === "midnight" &&
+      state.bg.ratio === "16:9" && state.stamps.length === 1 &&
+      (await page.evaluate(() => window.__cb.getOutputWidth())) === 800,
+    JSON.stringify({ f: state.filters.contrast, bg: state.bg.preset, r: state.bg.ratio, s: state.stamps.length }),
+  );
+
+  // 착착착: 연속 캡처로 두 번 찍어도 매 샷 동일 세팅 (스탬프 누적 없음)
+  await page.evaluate(() => window.__cb.connectSessionForTest());
+  await page.locator("#shutter").click();
+  await page.waitForTimeout(400);
+  await page.locator("#shutter").click();
+  await page.waitForTimeout(400);
+  state = await page.evaluate(() => window.__cb.getState());
+  check(
+    "연속 두 샷 모두 프리셋 자동 적용 + 스탬프 누적 없음",
+    state.baseSize?.[0] === 320 && state.stamps.length === 1 &&
+      state.bg.preset === "midnight" && state.filters.contrast === 18,
+    JSON.stringify({ size: state.baseSize, stamps: state.stamps.length }),
+  );
+  await page.evaluate(() => window.__cb.stopSession());
+
+  check("'직전 설정' 자동 기억됨", (await page.evaluate(() => window.__cb.getLastProfileId())) === "profile:last");
+  check("직전 설정 카드 표시(점선)", await page.locator("#profile-row .look-card.last").isVisible());
+
+  // 삭제
+  await page.locator(`[data-look="${profiles[0].id}"]`).hover();
+  await page.locator(`[data-look="${profiles[0].id}"] .pk-x`).click();
+  await page.waitForTimeout(200);
+  check("프리셋 삭제됨", (await page.evaluate(() => window.__cb.getProfiles())).length === 0);
+  check("삭제 시 선택 해제", (await page.evaluate(() => window.__cb.getLookId())) === "look-none");
+
   if (failures === 0) {
     console.log("\n🎉 e2e 스모크 테스트 전체 통과");
   } else {

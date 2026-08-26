@@ -86,6 +86,11 @@
           <span class="deck-label">🖃 도장</span>
           <div class="deck-items scroll-x" id="fun-row"></div>
         </div>
+        <div class="deck-row">
+          <span class="deck-label">📦 프리셋</span>
+          <div class="deck-items scroll-x" id="profile-row"
+            title="지금 편집 상태(크기·비율·배경·필터·AI 보정 결과·스탬프)를 저장해두고, 선택하면 매 샷이 그 세팅으로 나옵니다"></div>
+        </div>
       </div>
 
       <div class="camera-bar">
@@ -241,6 +246,17 @@
               <div class="ratio-row" id="ratio-buttons"></div>
               <h2>레이아웃</h2>
               <div class="sliders" id="bg-sliders"></div>
+              <div class="field">
+                <label>출력 너비</label>
+                <select id="out-width" class="select wide" title="저장/복사되는 이미지의 가로 크기">
+                  <option value="0">원본 크기</option>
+                  <option value="1920">1920px</option>
+                  <option value="1600">1600px</option>
+                  <option value="1280">1280px</option>
+                  <option value="1024">1024px</option>
+                  <option value="800">800px</option>
+                </select>
+              </div>
               <button class="btn wide" id="btn-auto-trim">✂️ 자동 여백 제거 (창 밖 정리)</button>
             </section>
 

@@ -259,6 +259,36 @@ body {
   box-shadow: 0 0 0 1px rgba(255, 92, 138, 0.35);
 }
 
+/* 내 프리셋 카드 */
+.look-card { position: relative; }
+.look-card .pk-x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 16px;
+  display: none;
+  cursor: pointer;
+}
+.look-card:hover .pk-x { display: block; }
+.look-card .pk-x:hover { color: var(--danger); border-color: var(--danger); }
+.look-card.last { border-style: dashed; }
+
+.chip.save-profile input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 12.5px;
+  width: 120px;
+}
+
 .shutter-col {
   display: flex;
   flex-direction: column;

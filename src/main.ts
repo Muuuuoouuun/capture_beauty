@@ -31,6 +31,7 @@ import {
   invalidateFilterCache,
   rawFromCanvas,
   renderComposite,
+  scaleCanvasToWidth,
   type RenderResult,
 } from "./render";
 import { selectRegion } from "./region";
@@ -45,6 +46,13 @@ import { CaptureSession, type QuickSettings } from "./quickcapture";
 import { isWidgetSupported, openWidget, type WidgetHandle } from "./widget";
 import { getNative } from "./native";
 import { getLook, LOOKS, pickRandomLook, RANDOM_LOOK_ID, type LookDef } from "./looks";
+import {
+  buildProfile,
+  cloneProfileStamps,
+  LAST_PROFILE_ID,
+  MAX_PROFILES,
+  type CaptureProfile,
+} from "./profiles";
 import {
   AI_FILTERS,
   adjustmentsToFilterParams,
@@ -72,9 +80,11 @@ const manager = new ShortcutManager(settings.shortcuts ?? undefined);
 const session = new CaptureSession();
 let widget: WidgetHandle | null = null;
 
-/** 홈 덱: 선택된 촬영 룩(매 샷에 적용) + 다음 샷 대기 중인 도장들 */
+/** 홈 덱: 선택된 촬영 스타일(룩 또는 내 프리셋 — 매 샷에 적용) + 다음 샷 대기 중인 도장들 */
 let selectedLookId = "look-none";
 const armedStampIds = new Set<string>();
+/** 내보내기 가로 크기 (px, 0 = 원본) */
+let outputWidth = 0;
 
 const PREVIEW_MAX_DIM = 1600;
 
@@ -243,7 +253,7 @@ function drawSelectionDecor(ctx: CanvasRenderingContext2D): void {
   ctx.restore();
 }
 
-/** 저장/복사용 풀해상도 합성 */
+/** 저장/복사용 풀해상도 합성 (+ 출력 너비 적용, 직전 설정 자동 기억) */
 function renderExport(): RenderResult {
   if (!baseCanvas) throw new Error("이미지가 없습니다.");
   invalidateFilterCache(); // 미리보기 캐시와 해상도가 다르므로 새로 계산
@@ -252,6 +262,10 @@ function renderExport(): RenderResult {
     `full-${baseVersion}`,
   );
   invalidateFilterCache();
+  updateLastProfile();
+  if (outputWidth > 0) {
+    return { ...result, canvas: scaleCanvasToWidth(result.canvas, outputWidth) };
+  }
   return result;
 }
 
@@ -272,6 +286,7 @@ function updateStatus(result: RenderResult): void {
   }
   if (bg.preset !== "none") notes.push(`배경: ${BACKGROUND_PRESETS.find((b) => b.id === bg.preset)?.name}`);
   if (bg.ratio !== "auto") notes.push(`비율 ${bg.ratio}`);
+  if (outputWidth > 0) notes.push(`출력 ↔${outputWidth}px`);
   if (stamps.length) notes.push(`스탬프 ${stamps.length}개`);
   $("#status-note").textContent = notes.join(" · ");
 }
@@ -1135,6 +1150,12 @@ function buildBackgroundPanel(): void {
     bgSliderRefresh.push(refresh);
   }
 
+  const outWidthSelect = $<HTMLSelectElement>("#out-width");
+  outWidthSelect.addEventListener("change", () => {
+    outputWidth = Number(outWidthSelect.value) || 0;
+    requestRender();
+  });
+
   $("#btn-auto-trim").addEventListener("click", () => doAutoTrim(false));
 }
 
@@ -1146,6 +1167,8 @@ function syncBackgroundUI(): void {
     el.classList.toggle("active", el.dataset.ratio === bg.ratio);
   });
   $("#bg-solid-field").hidden = bg.preset !== "solid";
+  const outSelect = $<HTMLSelectElement>("#out-width");
+  outSelect.value = [0, 1920, 1600, 1280, 1024, 800].includes(outputWidth) ? String(outputWidth) : "0";
   bgSliderRefresh.forEach((fn) => fn());
 }
 
@@ -1209,16 +1232,117 @@ function applyLookNow(look: LookDef, opts: { silent?: boolean } = {}): void {
   if (!opts.silent) toast(`${look.emoji} ${look.name} 룩 적용`, "success");
 }
 
-/** 새로 획득한 샷에 선택된 룩 + 대기 중인 도장을 자동 적용 */
+/* ---------- 내 프리셋 (캡처 프로파일) ---------- */
+
+function findProfile(id: string): CaptureProfile | null {
+  if (id === LAST_PROFILE_ID) return settings.lastProfile;
+  return settings.profiles.find((p) => p.id === id) ?? null;
+}
+
+/** 프로파일을 현재 상태에 통째로 적용 — 필터(AI 결과 포함)·배경/비율·스탬프·출력 크기 */
+function applyProfile(profile: CaptureProfile, opts: { silent?: boolean } = {}): void {
+  if (!baseCanvas) return;
+  filters = { ...profile.filters };
+  bg = { ...profile.bg };
+  stamps = cloneProfileStamps(profile);
+  selectedStampId = null;
+  outputWidth = profile.outputWidth;
+  setActiveFilterPreset("custom");
+  refreshFilterUI();
+  syncBackgroundUI();
+  renderStampList();
+  refreshStampEditor();
+  requestRender();
+  if (!opts.silent) toast(`${profile.emoji} ${profile.name} 프리셋 적용`, "success");
+}
+
+/** 선택 스타일(룩/프리셋) 공통 조회 — 요약 칩/안내 라벨용 */
+function getStyleInfo(id: string): { emoji: string; name: string } | null {
+  if (id === "look-none") return null;
+  const profile = findProfile(id);
+  if (profile) return { emoji: profile.emoji, name: profile.name };
+  const look = getLook(id);
+  return look ? { emoji: look.emoji, name: look.name } : null;
+}
+
+/** 선택 스타일을 현재 사진에 적용. 실제 적용된 스타일 정보를 반환 (없으면 null) */
+function applyStyleById(id: string, opts: { silent?: boolean } = {}): { emoji: string; name: string } | null {
+  if (id === "look-none" || !baseCanvas) return null;
+  const profile = findProfile(id);
+  if (profile) {
+    applyProfile(profile, opts);
+    return { emoji: profile.emoji, name: profile.name };
+  }
+  const look = getLook(id);
+  if (!look) return null;
+  const resolved = look.id === RANDOM_LOOK_ID ? pickRandomLook() : look;
+  applyLookNow(resolved, opts);
+  return { emoji: resolved.emoji, name: `${resolved.name} 룩` };
+}
+
+/** 내보내기/복사에 실제로 쓰인 편집 상태를 "직전 설정" 으로 자동 기억 */
+function updateLastProfile(): void {
+  const hasEdits =
+    !isNeutralState() || stamps.length > 0;
+  if (!hasEdits) return;
+  settings.lastProfile = buildProfile("직전 설정", { filters, bg, stamps, outputWidth }, {
+    id: LAST_PROFILE_ID,
+    emoji: "🕘",
+  });
+  saveSettings(settings);
+  renderProfileRow();
+}
+
+function isNeutralState(): boolean {
+  const d = defaultBackgroundOptions();
+  const bgNeutral =
+    bg.preset === d.preset && bg.ratio === d.ratio && outputWidth === 0;
+  return isNeutralFilters() && bgNeutral;
+}
+
+function isNeutralFilters(): boolean {
+  const d = defaultFilterParams();
+  return (Object.keys(d) as (keyof FilterParams)[]).every((k) => filters[k] === d[k]);
+}
+
+function saveCurrentProfile(name: string): CaptureProfile | null {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const existing = settings.profiles.find((p) => p.name === trimmed);
+  const profile = buildProfile(trimmed, { filters, bg, stamps, outputWidth }, {
+    id: existing?.id,
+    emoji: existing?.emoji,
+  });
+  if (existing) {
+    settings.profiles = settings.profiles.map((p) => (p.id === existing.id ? profile : p));
+    toast(`${profile.emoji} '${trimmed}' 프리셋을 덮어썼습니다.`, "success");
+  } else {
+    if (settings.profiles.length >= MAX_PROFILES) {
+      toast(`프리셋은 ${MAX_PROFILES}개까지 저장할 수 있어요. 하나를 지우고 다시 시도해주세요.`, "error");
+      return null;
+    }
+    settings.profiles = [...settings.profiles, profile];
+    toast(`${profile.emoji} '${trimmed}' 프리셋 저장 — 선택해두면 매 샷이 이 세팅으로 나와요.`, "success");
+  }
+  saveSettings(settings);
+  renderProfileRow();
+  selectLook(profile.id);
+  return profile;
+}
+
+function deleteProfile(id: string): void {
+  settings.profiles = settings.profiles.filter((p) => p.id !== id);
+  saveSettings(settings);
+  if (selectedLookId === id) selectedLookId = "look-none";
+  renderProfileRow();
+  syncLookUI();
+  syncArmedNote();
+  toast("프리셋을 삭제했습니다.");
+}
+
+/** 새로 획득한 샷에 선택된 스타일(룩/프리셋) + 대기 중인 도장을 자동 적용 */
 function applyShotExtras(): void {
-  const selected = getLook(selectedLookId);
-  const look =
-    selected && selected.id !== "look-none"
-      ? selected.id === RANDOM_LOOK_ID
-        ? pickRandomLook()
-        : selected
-      : null;
-  if (look) applyLookNow(look, { silent: true });
+  const applied = applyStyleById(selectedLookId, { silent: true });
 
   let stampCount = 0;
   for (const id of armedStampIds) {
@@ -1233,7 +1357,7 @@ function applyShotExtras(): void {
   syncArmedNote();
 
   const bits: string[] = [];
-  if (look) bits.push(`${look.emoji} ${look.name} 룩`);
+  if (applied) bits.push(`${applied.emoji} ${applied.name}`);
   if (stampCount) bits.push(`스탬프 ${stampCount}개`);
   if (bits.length) toast(`✨ ${bits.join(" · ")} 자동 적용`, "success");
 }
@@ -1242,19 +1366,21 @@ function selectLook(id: string): void {
   selectedLookId = id;
   syncLookUI();
   syncArmedNote();
-  const look = getLook(id);
-  if (!look || id === "look-none") return;
+  if (id === "look-none") return;
   if (baseCanvas) {
-    applyLookNow(look.id === RANDOM_LOOK_ID ? pickRandomLook() : look);
+    applyStyleById(id);
   } else {
-    toast(`${look.emoji} ${look.name} 룩 선택 — 다음 캡처에 자동 적용돼요.`);
+    const info = getStyleInfo(id);
+    if (info) toast(`${info.emoji} ${info.name} 선택 — 다음 캡처에 자동 적용돼요.`);
   }
 }
 
 function syncLookUI(): void {
-  document.querySelectorAll<HTMLButtonElement>("#look-row .look-card").forEach((el) => {
-    el.classList.toggle("active", el.dataset.look === selectedLookId);
-  });
+  document
+    .querySelectorAll<HTMLButtonElement>("#look-row .look-card, #profile-row .look-card")
+    .forEach((el) => {
+      el.classList.toggle("active", el.dataset.look === selectedLookId);
+    });
 }
 
 function syncFunRow(): void {
@@ -1265,9 +1391,9 @@ function syncFunRow(): void {
 
 function syncArmedNote(): void {
   const note = $("#armed-note");
-  const look = getLook(selectedLookId);
+  const info = getStyleInfo(selectedLookId);
   const bits: string[] = [];
-  if (!baseCanvas && look && look.id !== "look-none") bits.push(`${look.emoji} ${look.name}`);
+  if (!baseCanvas && info) bits.push(`${info.emoji} ${info.name}`);
   if (armedStampIds.size) bits.push(`스탬프 ${armedStampIds.size}개`);
   note.hidden = bits.length === 0;
   note.textContent = bits.length ? `다음 샷: ${bits.join(" · ")}` : "";
@@ -1291,6 +1417,76 @@ function refreshQuickChip(): void {
   chip.textContent = `⚡ 캡처 후: ${bits.length ? bits.join("·") : "켜짐"}`;
   chip.classList.add("active");
   syncDeckSummary();
+}
+
+/** 📦 프리셋 줄: [저장 칩] [🕘 직전 설정] [내 프리셋들…] */
+function renderProfileRow(): void {
+  const row = $("#profile-row");
+  row.innerHTML = "";
+
+  // 현재 설정 저장 — 클릭하면 칩이 이름 입력으로 바뀜 (Enter 저장 / Esc 취소)
+  const saveChip = document.createElement("button");
+  saveChip.className = "chip save-profile";
+  saveChip.id = "profile-save";
+  saveChip.textContent = "💾 현재 설정 저장";
+  saveChip.title = "지금 편집 상태(크기·비율·배경·필터·AI 보정 결과·스탬프)를 프리셋으로 저장";
+  saveChip.addEventListener("click", () => {
+    if (saveChip.querySelector("input")) return;
+    saveChip.textContent = "💾 ";
+    const input = document.createElement("input");
+    input.placeholder = "프리셋 이름 + Enter";
+    input.maxLength = 24;
+    input.value = "";
+    saveChip.appendChild(input);
+    input.focus();
+    const done = () => renderProfileRow();
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        saveCurrentProfile(input.value);
+        done();
+      } else if (e.key === "Escape") {
+        done();
+      }
+    });
+    input.addEventListener("blur", done);
+  });
+  row.appendChild(saveChip);
+
+  const makeCard = (profile: CaptureProfile, opts: { last?: boolean } = {}) => {
+    const card = document.createElement("button");
+    card.className = `look-card ${opts.last ? "last" : ""}`.trim();
+    card.dataset.look = profile.id;
+    const emoji = document.createElement("span");
+    emoji.className = "lk-emoji";
+    emoji.textContent = profile.emoji;
+    const name = document.createElement("span");
+    name.textContent = profile.name;
+    card.append(emoji, name);
+    const parts = [
+      profile.bg.ratio !== "auto" ? `비율 ${profile.bg.ratio}` : null,
+      profile.outputWidth ? `↔${profile.outputWidth}px` : null,
+      profile.stamps.length ? `스탬프 ${profile.stamps.length}` : null,
+    ].filter(Boolean);
+    card.title = `${opts.last ? "마지막 내보내기에 쓴 설정" : "저장된 프리셋"}${parts.length ? ` — ${parts.join(" · ")}` : ""}\n선택하면 매 샷에 자동 적용됩니다`;
+    card.addEventListener("click", () => selectLook(profile.id));
+    if (!opts.last) {
+      const x = document.createElement("span");
+      x.className = "pk-x";
+      x.textContent = "✕";
+      x.title = "프리셋 삭제";
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteProfile(profile.id);
+      });
+      card.appendChild(x);
+    }
+    row.appendChild(card);
+  };
+
+  if (settings.lastProfile) makeCard(settings.lastProfile, { last: true });
+  for (const p of settings.profiles) makeCard(p);
+  syncLookUI();
 }
 
 const HOME_STAMP_CHIPS = [
@@ -1351,10 +1547,10 @@ function syncDeckSummary(): void {
   if (session.active) {
     addChip("🔴 LIVE", { title: "연속 캡처 중 — 클릭해서 해제", cls: "live", onClick: () => void toggleSession() });
   }
-  const look = getLook(selectedLookId);
-  if (look && look.id !== "look-none") {
-    addChip(`${look.emoji} ${look.name}`, {
-      title: "선택된 룩 — 클릭해서 도구 열기, ✕ 로 해제",
+  const info = getStyleInfo(selectedLookId);
+  if (info) {
+    addChip(`${info.emoji} ${info.name}`, {
+      title: "선택된 촬영 스타일 — 클릭해서 도구 열기, ✕ 로 해제",
       cls: "active",
       onClick: toggleDeck,
       onClear: () => selectLook("look-none"),
@@ -1418,6 +1614,7 @@ function buildHomeDeck(): void {
   }
 
   $("#qk-chip").addEventListener("click", () => openEditor("settings"));
+  renderProfileRow();
   syncLookUI();
   syncFunRow();
   syncArmedNote();
@@ -1601,6 +1798,7 @@ function resetEdits(): void {
   stamps = [];
   selectedStampId = null;
   selectedLookId = "look-none";
+  outputWidth = 0;
   armedStampIds.clear();
   syncLookUI();
   syncFunRow();
@@ -1875,6 +2073,10 @@ declare global {
       selectLook: (id: string) => void;
       getLookId: () => string;
       getDeckOpen: () => boolean;
+      saveCurrentProfile: (name: string) => { id: string; name: string } | null;
+      getProfiles: () => { id: string; name: string; stamps: number; outputWidth: number }[];
+      getLastProfileId: () => string | null;
+      getOutputWidth: () => number;
       toggleArmedStamp: (id: string) => void;
       getArmedStamps: () => string[];
     };
@@ -1934,6 +2136,19 @@ function exposeTestHook(): void {
     selectLook,
     getLookId: () => selectedLookId,
     getDeckOpen: () => settings.deckOpen,
+    saveCurrentProfile: (name) => {
+      const p = saveCurrentProfile(name);
+      return p ? { id: p.id, name: p.name } : null;
+    },
+    getProfiles: () =>
+      settings.profiles.map((p) => ({
+        id: p.id,
+        name: p.name,
+        stamps: p.stamps.length,
+        outputWidth: p.outputWidth,
+      })),
+    getLastProfileId: () => (settings.lastProfile ? settings.lastProfile.id : null),
+    getOutputWidth: () => outputWidth,
     toggleArmedStamp: (id) => {
       if (armedStampIds.has(id)) armedStampIds.delete(id);
       else armedStampIds.add(id);

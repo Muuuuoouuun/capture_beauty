@@ -47,6 +47,18 @@ export function cropCanvasRect(
   return out;
 }
 
+/** 지정한 가로 크기로 축소한 사본 (더 작으면 원본 그대로) */
+export function scaleCanvasToWidth(source: HTMLCanvasElement, width: number): HTMLCanvasElement {
+  if (width <= 0 || source.width <= width) return source;
+  const out = document.createElement("canvas");
+  out.width = width;
+  out.height = Math.max(1, Math.round((source.height * width) / source.width));
+  const ctx = out.getContext("2d")!;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(source, 0, 0, out.width, out.height);
+  return out;
+}
+
 /** 긴 변이 maxDim 을 넘으면 축소한 사본, 아니면 원본 그대로 */
 export function downscaleCanvas(source: HTMLCanvasElement, maxDim: number): HTMLCanvasElement {
   const scale = Math.min(1, maxDim / Math.max(source.width, source.height));
