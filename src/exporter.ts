@@ -26,14 +26,17 @@ export function canvasToBlob(
   });
 }
 
-export async function downloadCanvas(canvas: HTMLCanvasElement, format: ExportFormat): Promise<void> {
-  const blob = await canvasToBlob(canvas, format);
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = exportFileName(format);
+  a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+export async function downloadCanvas(canvas: HTMLCanvasElement, format: ExportFormat): Promise<void> {
+  downloadBlob(await canvasToBlob(canvas, format), exportFileName(format));
 }
 
 export async function copyCanvasToClipboard(canvas: HTMLCanvasElement): Promise<void> {

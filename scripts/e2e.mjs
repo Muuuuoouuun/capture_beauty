@@ -421,6 +421,31 @@ try {
   check("프리셋 삭제됨", (await page.evaluate(() => window.__cb.getProfiles())).length === 0);
   check("삭제 시 선택 해제", (await page.evaluate(() => window.__cb.getLookId())) === "look-none");
 
+  console.log("\n[20] 🎞️ 샷 히스토리 (필름 스트립)");
+  // 리로드 이후의 촬영: [15] 1 + [17] 영역 1 + [19] 2 = 4
+  check("필름 스트립 표시", await page.locator("#shot-strip").isVisible());
+  const thumbCount = await page.locator("#shot-items .shot-thumb").count();
+  check("촬영한 샷 4개 적재", thumbCount === 4, String(thumbCount));
+  check("라벨에 개수 표시", (await page.locator("#shot-strip-label").textContent())?.includes("4"));
+  // 최신 샷(첫 썸네일) 클릭 → 완성본 로드 + 편집 초기화
+  await page.locator("#shot-items .shot-thumb >> nth=0").click();
+  await page.waitForTimeout(400);
+  state = await page.evaluate(() => window.__cb.getState());
+  check(
+    "샷 불러오기 — 완성본 로드 + 편집 초기 상태",
+    state.hasImage && state.filters.contrast === 0 && state.bg.preset === "none" && state.stamps.length === 0,
+    JSON.stringify({ f: state.filters.contrast, bg: state.bg.preset, s: state.stamps.length }),
+  );
+  // 삭제 (호버 후 ✕)
+  await page.locator("#shot-items .shot-thumb >> nth=0").hover();
+  await page.locator("#shot-items .shot-thumb >> nth=0 >> .st-actions button >> nth=2").click();
+  await page.waitForTimeout(200);
+  check("샷 1개 삭제", (await page.locator("#shot-items .shot-thumb").count()) === 3);
+  // 전체 비우기
+  await page.locator("#shots-clear").click();
+  await page.waitForTimeout(200);
+  check("기록 비우기 → 스트립 숨김", await page.locator("#shot-strip").isHidden());
+
   if (failures === 0) {
     console.log("\n🎉 e2e 스모크 테스트 전체 통과");
   } else {

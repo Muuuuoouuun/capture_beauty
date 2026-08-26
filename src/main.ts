@@ -39,7 +39,9 @@ import {
   canvasToAnalysisBase64,
   canvasToBlob,
   copyCanvasToClipboard,
+  downloadBlob,
   downloadCanvas,
+  exportFileName,
   type ExportFormat,
 } from "./exporter";
 import { CaptureSession, type QuickSettings } from "./quickcapture";
@@ -364,8 +366,7 @@ async function doCaptureScreen(fromWindow?: Window): Promise<void> {
     setBaseCanvas(canvas, { pushHistory: true });
     if (!editorWasOpen) fireShutterFlash();
     toast(`화면을 캡처했습니다 (${canvas.width}×${canvas.height})`, "success");
-    applyShotExtras();
-    await runQuickActions(fromWindow);
+    await finishShot(fromWindow);
   } catch (err) {
     toast(err instanceof Error ? err.message : "화면 캡처 실패", "error");
   }
@@ -398,8 +399,7 @@ async function doRegionCapture(): Promise<void> {
     setBaseCanvas(cropCanvasRect(full, rect), { pushHistory: true });
     if (!isEditorOpen()) fireShutterFlash();
     toast(`영역을 캡처했습니다 (${rect.w}×${rect.h})`, "success");
-    applyShotExtras();
-    await runQuickActions();
+    await finishShot();
   } catch (err) {
     toast(err instanceof Error ? err.message : "영역 캡처 실패", "error");
   }
@@ -453,13 +453,23 @@ async function copyCanvasSmart(canvas: HTMLCanvasElement, fromWindow?: Window): 
   throw lastErr instanceof Error ? lastErr : new Error("클립보드 복사에 실패했습니다.");
 }
 
-async function runQuickActions(fromWindow?: Window): Promise<void> {
+/**
+ * 촬영 마무리 공통 플로우: 스타일/도장 자동 적용 → 완성본 1회 렌더 →
+ * 🎞️ 샷 히스토리에 적재 → 퀵 동작(복사/저장/썸네일).
+ */
+async function finishShot(fromWindow?: Window): Promise<void> {
+  applyShotExtras();
+  if (settings.quick.enabled && settings.quick.autoTrim) doAutoTrim(true);
+  const exported = renderExport().canvas;
+  await pushShotHistory(exported);
+  await runQuickActions(fromWindow, exported);
+}
+
+async function runQuickActions(fromWindow?: Window, preExported?: HTMLCanvasElement): Promise<void> {
   const q = settings.quick;
   if (!q.enabled || !baseCanvas) return;
 
-  if (q.autoTrim) doAutoTrim(true);
-
-  let exported: HTMLCanvasElement | null = null;
+  let exported: HTMLCanvasElement | null = preExported ?? null;
   const getExported = () => (exported ??= renderExport().canvas);
   const results: string[] = [];
 
@@ -543,6 +553,132 @@ function setupQuickThumb(): void {
     })();
   });
   $("#qt-save").addEventListener("click", () => void doExport());
+}
+
+/* =========================================================
+ * 🎞️ 샷 히스토리 (필름 스트립) — 찍은 완성본이 차곡차곡 쌓인다
+ * ========================================================= */
+
+interface ShotItem {
+  id: number;
+  w: number;
+  h: number;
+  thumbUrl: string;
+  blob: Blob;
+}
+
+const shotHistory: ShotItem[] = [];
+const MAX_SHOTS = 12;
+let shotSeq = 0;
+
+async function pushShotHistory(exported: HTMLCanvasElement): Promise<void> {
+  try {
+    const blob = await canvasToBlob(exported, "png");
+    const thumbUrl = downscaleCanvas(exported, 240).toDataURL("image/jpeg", 0.75);
+    shotHistory.push({ id: ++shotSeq, w: exported.width, h: exported.height, thumbUrl, blob });
+    if (shotHistory.length > MAX_SHOTS) shotHistory.shift();
+    renderShotStrip();
+  } catch {
+    // 히스토리 적재 실패가 촬영 흐름을 막지 않게 한다
+  }
+}
+
+function renderShotStrip(): void {
+  const strip = $("#shot-strip");
+  const box = $("#shot-items");
+  strip.hidden = shotHistory.length === 0;
+  $("#shot-strip-label").textContent = `🎞️ 샷 ${shotHistory.length}`;
+  box.innerHTML = "";
+  for (const shot of [...shotHistory].reverse()) {
+    const card = document.createElement("button");
+    card.className = "shot-thumb";
+    card.title = `#${shot.id} · ${shot.w}×${shot.h}px — 클릭하면 이 샷을 불러옵니다`;
+    const img = document.createElement("img");
+    img.src = shot.thumbUrl;
+    img.alt = `샷 #${shot.id}`;
+    const num = document.createElement("span");
+    num.className = "st-num";
+    num.textContent = `#${shot.id}`;
+    const actions = document.createElement("div");
+    actions.className = "st-actions";
+    const mk = (label: string, title: string, fn: () => void) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        fn();
+      });
+      actions.appendChild(b);
+    };
+    mk("📋", "복사", () => void copyShot(shot));
+    mk("💾", "저장", () => saveShot(shot));
+    mk("✕", "기록에서 삭제", () => deleteShot(shot.id));
+    card.append(img, num, actions);
+    card.addEventListener("click", () => void loadShot(shot));
+    box.appendChild(card);
+  }
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("이미지 변환에 실패했습니다."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** 완성본(플랫)을 다시 불러온다 — 이미 스타일이 구워져 있으므로 편집은 초기화 */
+async function loadShot(shot: ShotItem): Promise<void> {
+  try {
+    const canvas = await canvasFromBlob(shot.blob);
+    clearCanvasEdits();
+    setBaseCanvas(canvas, { pushHistory: true });
+    toast(`#${shot.id} 샷을 불러왔습니다 — 완성본이라 편집은 초기 상태예요.`);
+  } catch (err) {
+    toast(err instanceof Error ? err.message : "샷을 불러오지 못했습니다.", "error");
+  }
+}
+
+async function copyShot(shot: ShotItem): Promise<void> {
+  try {
+    const native = getNative();
+    if (native) {
+      await native.copyImage(await blobToDataUrl(shot.blob));
+    } else {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": shot.blob })]);
+    }
+    toast(`#${shot.id} 샷을 클립보드에 복사했습니다.`, "success");
+  } catch (err) {
+    toast(err instanceof Error ? err.message : "복사에 실패했습니다.", "error");
+  }
+}
+
+function saveShot(shot: ShotItem): void {
+  downloadBlob(shot.blob, exportFileName("png"));
+  toast(`#${shot.id} 샷을 저장했습니다.`, "success");
+}
+
+function deleteShot(id: number): void {
+  const idx = shotHistory.findIndex((s) => s.id === id);
+  if (idx >= 0) shotHistory.splice(idx, 1);
+  renderShotStrip();
+}
+
+function clearShots(): void {
+  shotHistory.length = 0;
+  renderShotStrip();
+  toast("샷 기록을 비웠습니다.");
+}
+
+async function saveAllShots(): Promise<void> {
+  if (!shotHistory.length) return;
+  for (const shot of shotHistory) {
+    downloadBlob(shot.blob, exportFileName("png"));
+    await new Promise((r) => setTimeout(r, 350)); // 브라우저 다운로드 차단 방지 간격
+  }
+  toast(`샷 ${shotHistory.length}개를 모두 저장했습니다.`, "success");
 }
 
 /* =========================================================
@@ -1792,17 +1928,13 @@ async function doCopy(): Promise<void> {
   }
 }
 
-function resetEdits(): void {
+/** 캔버스 편집 상태만 초기화 (촬영 스타일/도장 예약은 유지) */
+function clearCanvasEdits(): void {
   filters = defaultFilterParams();
   bg = defaultBackgroundOptions();
   stamps = [];
   selectedStampId = null;
-  selectedLookId = "look-none";
   outputWidth = 0;
-  armedStampIds.clear();
-  syncLookUI();
-  syncFunRow();
-  syncArmedNote();
   setActiveFilterPreset("none");
   refreshFilterUI();
   syncBackgroundUI();
@@ -1810,6 +1942,15 @@ function resetEdits(): void {
   refreshStampEditor();
   $("#ai-comment").hidden = true;
   requestRender();
+}
+
+function resetEdits(): void {
+  clearCanvasEdits();
+  selectedLookId = "look-none";
+  armedStampIds.clear();
+  syncLookUI();
+  syncFunRow();
+  syncArmedNote();
   toast("편집을 초기화했습니다.");
 }
 
@@ -1873,6 +2014,8 @@ function bindInputSources(): void {
   $("#cam-widget").addEventListener("click", () => void toggleWidget());
   $("#cam-settings").addEventListener("click", () => openEditor("settings"));
   $("#deck-toggle").addEventListener("click", toggleDeck);
+  $("#shots-save-all").addEventListener("click", () => void saveAllShots());
+  $("#shots-clear").addEventListener("click", clearShots);
   $("#act-edit").addEventListener("click", () => openEditor());
   $("#act-crop").addEventListener("click", () => void doCropCurrent());
   $("#act-export").addEventListener("click", () => void doExport());
@@ -1983,8 +2126,7 @@ function setupNative(): void {
         setBaseCanvas(canvas, { pushHistory: true });
         if (!payload.openEditor && !isEditorOpen()) fireShutterFlash();
         toast(`화면을 캡처했습니다 (${canvas.width}×${canvas.height})`, "success");
-        applyShotExtras();
-        await runQuickActions();
+        await finishShot();
         if (payload.openEditor) openEditor();
       } catch (err) {
         toast(err instanceof Error ? err.message : "캡처 처리 실패", "error");
