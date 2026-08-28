@@ -6,31 +6,29 @@
 
 const PATHS = {
   camera:
-    '<rect x="3" y="7" width="18" height="13" rx="2.5"/><circle cx="12" cy="13.5" r="3.5"/><path d="M9 7l1.2-2.4A1 1 0 0 1 11.1 4h1.8a1 1 0 0 1 .9.6L15 7"/>',
-  gear:
-    '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/>',
-  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    '<rect x="3.5" y="7" width="17" height="12.5" rx="3"/><circle cx="12" cy="13" r="3.2"/><path d="M9.5 7l1-2h3l1 2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5V6M12 18v2.5M3.5 12H6M18 12h2.5"/>',
+  folder: '<path d="M3.5 7a2 2 0 0 1 2-2h3.6l2 2.4h7.4a2 2 0 0 1 2 2v7.6a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
   clipboard:
-    '<rect x="5" y="4.5" width="14" height="17" rx="2"/><rect x="9" y="2.5" width="6" height="4" rx="1.2"/>',
+    '<rect x="5.5" y="4.5" width="13" height="16.5" rx="2.2"/><path d="M9 4.5V3.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/>',
   link:
     '<path d="M10 13.5a4.5 4.5 0 0 0 6.6.5l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4l-1.4 1.4"/><path d="M14 10.5a4.5 4.5 0 0 0-6.6-.5l-2.6 2.6a4.5 4.5 0 0 0 6.4 6.4l1.4-1.4"/>',
-  pin:
-    '<path d="M9 3.5h6l-1 6 3.5 2.5v1.5H6.5V12L10 9.5z"/><path d="M12 13.5V21"/>',
+  pin: '<path d="M9.5 4h5l-.7 5.5 2.7 2V13H7.5v-1.5l2.7-2z"/><path d="M12 13v7.5"/>',
   zap: '<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/>',
   sliders:
-    '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="var(--panel-2,#23232f)"/><circle cx="15" cy="12" r="2" fill="var(--panel-2,#23232f)"/><circle cx="7.5" cy="17" r="2" fill="var(--panel-2,#23232f)"/>',
-  download: '<path d="M12 3.5V15M7.5 10.5l4.5 4.5 4.5-4.5"/><path d="M4.5 20.5h15"/>',
+    '<path d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15"/><circle cx="9.5" cy="7.5" r="1.8"/><circle cx="15" cy="12" r="1.8"/><circle cx="8" cy="16.5" r="1.8"/>',
+  download: '<path d="M12 4v10.5M8 11l4 4 4-4"/><path d="M5 20h14"/>',
   copy:
-    '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5v-3a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/>',
-  pencil: '<path d="M16.5 3.5 20.5 7.5 8 20l-5 1 1-5z"/><path d="M14.5 5.5l4 4"/>',
+    '<rect x="9" y="9" width="11.5" height="11.5" rx="2.2"/><path d="M15 9V5.5a2 2 0 0 0-2-2H5.5a2 2 0 0 0-2 2V13a2 2 0 0 0 2 2H9"/>',
+  pencil: '<path d="M16.8 3.7 20.3 7.2 8 19.5l-4.6 1.1L4.5 16z"/>',
   undo: '<path d="M8.5 14 3.5 9l5-5"/><path d="M3.5 9H14a6.5 6.5 0 0 1 0 13h-3"/>',
   eraser:
-    '<path d="M9.5 20 3.8 14.3a2 2 0 0 1 0-2.8l7.5-7.5a2 2 0 0 1 2.8 0l6 6a2 2 0 0 1 0 2.8L13 20z"/><path d="M9.5 20H20"/><path d="M8 9.5l6.5 6.5"/>',
-  trash: '<path d="M4 6.5h16M9 6.5v-2h6v2M6.5 6.5 7.5 21h9l1-14.5"/><path d="M10 10.5v6.5M14 10.5v6.5"/>',
-  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    '<path d="M9.5 19.5 4 14a2 2 0 0 1 0-2.8l7.3-7.3a2 2 0 0 1 2.8 0l5.9 5.9a2 2 0 0 1 0 2.8l-6.9 6.9z"/><path d="M9.5 19.5H20"/>',
+  trash: '<path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M7 6.5l1 14h8l1-14"/>',
+  x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   crop: '<path d="M6.5 2.5v13a2 2 0 0 0 2 2h13"/><path d="M2.5 6.5h13a2 2 0 0 1 2 2v13"/>',
   floppy:
-    '<path d="M5 3.5h11l4.5 4.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 20V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M8 3.5V9h7V3.5"/><rect x="7.5" y="13.5" width="9" height="8" rx="1"/>',
+    '<path d="M5 3.5h11l4.5 4.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 20V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M8 3.5V8.5h7"/><path d="M7.5 20v-6h9v6"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -38,7 +36,7 @@ export type IconName = keyof typeof PATHS;
 export function icon(name: IconName, size = 16): string {
   return (
     `<svg class="icn" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" ` +
-    `stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+    `stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
     PATHS[name] +
     `</svg>`
   );
