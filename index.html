@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Capture Beauty — 캡처 뷰티</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📸</text></svg>" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <!-- ================= 캡처 모드 (기본, 사진기 스타일) ================= -->
+    <div id="capture-view">
+      <div class="cam-topline">
+        <div class="brand"><span id="brand-logo"></span> <strong>Capture Beauty</strong></div>
+        <div class="cam-topline-right">
+          <span id="live-badge" class="live-badge" hidden>● LIVE</span>
+          <button id="cam-settings" class="icon-btn" title="설정 (편집 창)"></button>
+        </div>
+      </div>
+
+      <div class="viewfinder" id="viewfinder">
+        <div class="vf-corner tl"></div>
+        <div class="vf-corner tr"></div>
+        <div class="vf-corner bl"></div>
+        <div class="vf-corner br"></div>
+        <div class="vf-hint" id="vf-hint">
+          <!-- 카메라 그래픽 — 미니멀 라인 스타일 -->
+          <svg class="vf-camera" width="118" height="88" viewBox="0 0 118 88" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="camLine" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ff5c8a" />
+                <stop offset="1" stop-color="#7c6cff" />
+              </linearGradient>
+            </defs>
+            <!-- 점선 선택 틀 (애플 캡처 모티프) -->
+            <rect x="2" y="2" width="114" height="84" rx="11"
+              stroke="rgba(232,232,239,0.22)" stroke-width="1.3" stroke-dasharray="6 6" />
+            <!-- 카메라 아웃라인 -->
+            <g stroke="url(#camLine)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="24" y="29" width="70" height="42" rx="9" />
+              <path d="M48 29l3.5-6h15l3.5 6" />
+              <circle cx="59" cy="49.5" r="11.5" />
+              <circle class="cam-lens" cx="59" cy="49.5" r="5" />
+            </g>
+            <circle class="cam-flash" cx="85" cy="38.5" r="2.2" fill="#ffe9a8" />
+          </svg>
+          <p>룩을 고르고, 셔터를 누르세요</p>
+          <p class="hint">
+            <kbd id="hint-capture">Ctrl+Shift+S</kbd> 캡처 ·
+            <kbd id="hint-region">G</kbd> 영역 · <kbd>Ctrl+V</kbd> 붙여넣기
+          </p>
+        </div>
+        <canvas id="camera-preview" hidden title="클릭하면 편집 창이 열립니다"></canvas>
+      </div>
+
+      <div class="capture-actions" id="capture-actions" hidden>
+        <button id="act-edit" class="btn primary">편집</button>
+        <button id="act-crop" class="btn" title="점선 영역을 드래그해 잘라내기">자르기</button>
+        <button id="act-export" class="btn">저장</button>
+        <button id="act-copy" class="btn">복사</button>
+      </div>
+
+      <!-- 이 세션에서 촬영한 샷들 (필름 스트립) -->
+      <div class="shot-strip" id="shot-strip" hidden>
+        <span class="deck-label" id="shot-strip-label">샷</span>
+        <div class="shot-items scroll-x" id="shot-items"></div>
+        <div class="shot-strip-tools">
+          <button id="shots-save-all" class="chip" title="모든 샷을 순서대로 저장">모두</button>
+          <button id="shots-clear" class="chip" title="샷 기록 비우기"></button>
+        </div>
+      </div>
+
+      <!-- 도구 토글 + 퀵 칩(펼침 시) + 설정된 요소 요약(접힘 시) -->
+      <div class="deck-bar">
+        <button id="deck-toggle" class="chip" title="꾸미기 도구 열기/접기">도구</button>
+        <div class="deck-items" id="quick-chips" hidden>
+          <button id="cam-live" class="chip" title="화면을 한 번만 연결하면 이후 셔터는 선택창 없이 즉시 찍힙니다">연속 캡처</button>
+          <button id="cam-widget" class="chip" title="항상 위에 떠 있는 초소형 캡처 위젯 (PiP)">위젯</button>
+          <button id="qk-chip" class="chip" title="캡처 후 자동 동작 — 클릭해서 설정">캡처 후</button>
+        </div>
+        <div class="deck-items" id="deck-summary"></div>
+      </div>
+
+      <!-- 홈 덱: 룩 · 도장 · 프리셋 -->
+      <div class="home-deck" id="home-deck" hidden>
+        <div class="deck-row">
+          <span class="deck-label">룩</span>
+          <div class="deck-items scroll-x" id="look-row"></div>
+        </div>
+        <div class="deck-row">
+          <span class="deck-label">도장</span>
+          <div class="deck-items scroll-x" id="fun-row"></div>
+        </div>
+        <div class="deck-row">
+          <span class="deck-label">프리셋</span>
+          <div class="deck-items scroll-x" id="profile-row"
+            title="지금 편집 상태(크기·비율·배경·필터·AI 보정 결과·스탬프)를 저장해두고, 선택하면 매 샷이 그 세팅으로 나옵니다"></div>
+        </div>
+      </div>
+
+      <div class="camera-bar">
+        <button id="cam-open" class="icon-btn round" title="이미지 열기"></button>
+        <button id="shutter-region" class="icon-btn round" title="영역 캡처 — 드래그로 원하는 부분만 (G)">
+          <svg width="20" height="20" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="15" height="15" rx="3.5"
+              stroke="currentColor" stroke-width="1.6" stroke-dasharray="3.2 3" />
+          </svg>
+        </button>
+        <div class="shutter-col">
+          <button id="shutter" title="화면 캡처 (셔터)"><span class="shutter-core"></span></button>
+          <div class="armed-note" id="armed-note" hidden></div>
+        </div>
+        <button id="cam-paste" class="icon-btn round" title="클립보드 붙여넣기"></button>
+      </div>
+
+      <input id="file-input" type="file" accept="image/*" hidden />
+    </div>
+
+    <!-- ================= 편집기 — 프로그램 창 ================= -->
+    <div id="editor-backdrop" hidden>
+      <div class="app-window" id="editor-window">
+        <div class="titlebar" id="titlebar">
+          <div class="traffic">
+            <button class="light red" id="win-close" title="닫기"></button>
+            <button class="light yellow" id="win-min" title="캡처 화면으로"></button>
+            <button class="light green" id="win-max" title="최대화/복원"></button>
+          </div>
+          <div class="win-title">Capture Beauty — 편집</div>
+          <div class="win-tools">
+            <button id="btn-capture" class="btn sm" title="다시 캡처"></button>
+            <button id="btn-undo" class="btn sm" title="실행 취소"></button>
+            <button id="btn-reset" class="btn sm" title="편집 초기화"></button>
+            <select id="export-format" class="select sm" title="저장 형식">
+              <option value="png">PNG</option>
+              <option value="jpeg">JPG</option>
+              <option value="webp">WebP</option>
+            </select>
+            <button id="btn-export" class="btn sm primary" title="저장">저장</button>
+            <button id="btn-copy" class="btn sm" title="클립보드로 복사"></button>
+          </div>
+        </div>
+
+        <main class="layout">
+          <section class="stage" id="stage">
+            <div class="empty-state" id="empty-state">
+              <div class="empty-icon" id="empty-icon"></div>
+              <p>아직 캡처한 이미지가 없습니다.</p>
+              <button class="btn primary" id="empty-capture">화면 캡처</button>
+            </div>
+            <div class="canvas-wrap" id="canvas-wrap" hidden>
+              <div class="preview-stack" id="preview-stack">
+                <canvas id="preview"></canvas>
+                <!-- 드래그 중인 주석/스탬프·선택 표시 전용 (합성 재실행 없이 즉시 갱신) -->
+                <canvas id="preview-overlay"></canvas>
+              </div>
+            </div>
+            <div class="statusbar" id="statusbar" hidden>
+              <span id="status-size"></span>
+              <span id="status-out"></span>
+              <span id="status-note"></span>
+            </div>
+          </section>
+
+          <aside class="sidebar">
+            <nav class="tabs" id="tabs">
+              <button class="tab active" data-tab="adjust">보정</button>
+              <button class="tab" data-tab="marks">표시</button>
+              <button class="tab" data-tab="background">배경</button>
+            </nav>
+
+            <!-- 보정 = 프리셋 + AI + 세부 조정 -->
+            <section class="panel active" data-panel="adjust">
+              <h2>프리셋</h2>
+              <div class="preset-grid" id="filter-presets"></div>
+
+              <h2>AI 보정 <span class="badge-note">Claude</span></h2>
+              <div class="ai-key-warning" id="ai-key-warning" hidden>
+                API 키가 없습니다 — <a href="#" id="goto-settings">설정 › 연결</a> 에서 입력하세요.
+              </div>
+              <div class="ai-filter-list" id="ai-filters"></div>
+              <div class="row">
+                <input id="ai-custom-prompt" class="input" type="text"
+                  placeholder="직접 지시 — 예: 새벽 감성으로" />
+                <button class="btn" id="btn-ai-custom">적용</button>
+              </div>
+              <div class="ai-comment" id="ai-comment" hidden></div>
+              <div class="row" id="ai-endpoint-row" hidden>
+                <input id="ai-endpoint-instruction" class="input" type="text" placeholder="외부 변환 지시" />
+                <button class="btn" id="btn-ai-transform">변환</button>
+              </div>
+
+              <h2>세부 조정</h2>
+              <div class="sliders" id="filter-sliders"></div>
+              <button class="btn wide" id="btn-filter-reset">보정 초기화</button>
+            </section>
+
+            <!-- 표시 = 주석 + 스탬프 -->
+            <section class="panel" data-panel="marks">
+              <h2>주석</h2>
+              <div class="tool-row" id="annotation-tools"></div>
+              <div class="anno-style" id="anno-style" hidden>
+                <div class="swatches" id="anno-swatches"></div>
+                <input id="anno-color" type="color" class="color sm" title="직접 색 고르기" />
+              </div>
+              <div class="sliders" id="anno-sliders"></div>
+              <p class="desc" id="anno-hint">도구를 고른 뒤 미리보기에서 드래그하세요.</p>
+              <button class="btn wide danger" id="btn-anno-clear" hidden>주석 모두 지우기</button>
+
+              <h2>스탬프</h2>
+              <div class="preset-grid" id="stamp-presets"></div>
+              <div class="row">
+                <select id="stamp-emoji" class="select"></select>
+                <button class="btn" id="btn-stamp-emoji">이모지</button>
+              </div>
+
+              <h2>스탬프 목록</h2>
+              <p class="desc">미리보기에서 드래그해 위치를 옮기고, <kbd>Del</kbd> 로 삭제합니다.</p>
+              <ul class="stamp-list" id="stamp-list"></ul>
+              <div id="stamp-editor" hidden>
+                <h2>선택한 스탬프</h2>
+                <div class="field" id="stamp-text-field">
+                  <label>내용</label>
+                  <input id="stamp-text" class="input" type="text" />
+                </div>
+                <div class="field" id="stamp-format-field" hidden>
+                  <label>날짜 형식</label>
+                  <select id="stamp-format" class="select wide"></select>
+                </div>
+                <div class="field">
+                  <label>스타일</label>
+                  <select id="stamp-style" class="select wide"></select>
+                </div>
+                <div class="field">
+                  <label>색상</label>
+                  <input id="stamp-color" type="color" class="color" />
+                </div>
+                <div class="sliders" id="stamp-sliders"></div>
+                <button class="btn wide danger" id="btn-stamp-delete">스탬프 삭제</button>
+              </div>
+            </section>
+
+            <!-- 배경 -->
+            <section class="panel" data-panel="background">
+              <h2>스마트 프리셋</h2>
+              <p class="desc">하나를 누르면 여백 제거·배경·비율이 한 번에 세팅됩니다.</p>
+              <div class="smart-list" id="smart-backgrounds"></div>
+
+              <h2>배경</h2>
+              <div class="bg-grid" id="bg-presets"></div>
+              <div class="field" id="bg-solid-field" hidden>
+                <label>색상</label>
+                <input id="bg-solid-color" type="color" class="color" />
+              </div>
+
+              <h2>비율</h2>
+              <div class="ratio-row" id="ratio-buttons"></div>
+
+              <h2>레이아웃</h2>
+              <div class="sliders" id="bg-sliders"></div>
+              <div class="field">
+                <label>출력 너비</label>
+                <select id="out-width" class="select wide" title="저장/복사되는 이미지의 가로 크기">
+                  <option value="0">원본 크기</option>
+                  <option value="1920">1920px</option>
+                  <option value="1600">1600px</option>
+                  <option value="1280">1280px</option>
+                  <option value="1024">1024px</option>
+                  <option value="800">800px</option>
+                </select>
+              </div>
+              <button class="btn wide" id="btn-auto-trim">자동 여백 제거</button>
+            </section>
+          </aside>
+        </main>
+      </div>
+    </div>
+
+    <!-- ================= 설정 — 독립 창 ================= -->
+    <div id="settings-backdrop" hidden>
+      <div class="app-window settings-window" id="settings-window">
+        <div class="titlebar plain">
+          <div class="win-title">설정</div>
+          <div class="win-tools">
+            <button id="settings-close" class="icon-btn" title="닫기 (Esc)"></button>
+          </div>
+        </div>
+
+        <main class="layout">
+          <nav class="sect-rail" id="settings-rail">
+            <button class="sect active" data-sect="capture">캡처</button>
+            <button class="sect" data-sect="keys">단축키</button>
+            <button class="sect" data-sect="connect">연결</button>
+          </nav>
+
+          <div class="sect-body">
+            <!-- 캡처 -->
+            <section class="sect-panel active" data-sect-panel="capture">
+              <h2>캡처 후 자동 동작</h2>
+              <p class="desc">셔터만 누르면 나머지는 자동 — 창을 띄우지 않고 끝냅니다.</p>
+              <div class="check-col">
+                <label><input type="checkbox" id="qk-enabled" /> 퀵 캡처 켜기</label>
+                <label><input type="checkbox" id="qk-trim" /> 자동 여백 제거</label>
+                <label><input type="checkbox" id="qk-copy" /> 클립보드에 복사</label>
+                <label><input type="checkbox" id="qk-save" /> 파일로 저장</label>
+              </div>
+              <div class="sliders" id="qk-sliders"></div>
+
+              <div id="native-settings" hidden>
+                <h2>전역 단축키 <span class="badge-note">데스크톱</span></h2>
+                <p class="desc">
+                  앱이 트레이에 있어도 동작합니다. 예:
+                  <code>CommandOrControl+Shift+1</code>
+                </p>
+                <div class="field">
+                  <label>빠른 캡처</label>
+                  <input id="ns-quick" class="input" type="text" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label>캡처+편집</label>
+                  <input id="ns-edit" class="input" type="text" spellcheck="false" />
+                </div>
+                <button class="btn wide" id="ns-apply">적용</button>
+                <p class="desc" id="ns-status"></p>
+              </div>
+            </section>
+
+            <!-- 단축키 -->
+            <section class="sect-panel" data-sect-panel="keys">
+              <div class="keys-bar">
+                <input id="shortcut-search" class="input" type="search" placeholder="단축키 검색" />
+                <button class="btn sm" id="btn-shortcut-reset" title="모든 단축키를 기본값으로">기본값</button>
+              </div>
+              <p class="desc">키 배지를 누른 뒤 원하는 조합을 입력하세요. <kbd>Esc</kbd> 로 취소.</p>
+              <div id="shortcut-list"></div>
+              <p class="desc" id="shortcut-empty" hidden>검색 결과가 없습니다.</p>
+            </section>
+
+            <!-- 연결 -->
+            <section class="sect-panel" data-sect-panel="connect">
+              <h2>Anthropic API 키</h2>
+              <p class="desc">AI 보정에 사용합니다. 이 브라우저의 localStorage 에만 저장됩니다.</p>
+              <input id="api-key" class="input wide" type="password" placeholder="sk-ant-..." autocomplete="off" />
+
+              <h2>외부 변환 API <span class="badge-note">선택</span></h2>
+              <p class="desc">
+                픽셀 자체를 바꾸는 자체 서버가 있다면 연결하세요.
+                <code>POST {image, instruction} → {image}</code>
+              </p>
+              <input id="transform-endpoint" class="input wide" type="url"
+                placeholder="https://my-server.example/transform" />
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- macOS 스타일 플로팅 썸네일 (퀵 캡처 후 잠깐 표시) -->
+    <div class="quick-thumb" id="quick-thumb" hidden>
+      <img id="quick-thumb-img" alt="방금 캡처" title="클릭하면 편집 창이 열립니다" />
+      <div class="quick-thumb-actions">
+        <button id="qt-copy" class="btn sm" title="복사"></button>
+        <button id="qt-save" class="btn sm" title="저장"></button>
+        <button id="qt-edit" class="btn sm" title="편집"></button>
+        <button id="qt-close" class="btn sm" title="닫기"></button>
+      </div>
+    </div>
+
+    <div class="shutter-flash" id="shutter-flash"></div>
+    <div class="drop-overlay" id="drop-overlay" hidden>이미지를 여기에 놓으세요</div>
+    <div class="busy-overlay" id="busy-overlay" hidden>
+      <div class="spinner"></div>
+      <div id="busy-message">처리 중…</div>
+    </div>
+    <div class="toasts" id="toasts"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
