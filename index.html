@@ -143,9 +143,9 @@
         <main class="layout">
           <section class="stage" id="stage">
             <div class="empty-state" id="empty-state">
-              <div class="empty-icon">🎞️</div>
+              <div class="empty-icon" id="empty-icon"></div>
               <p>아직 캡처한 이미지가 없습니다.</p>
-              <button class="btn primary" id="empty-capture">🖥️ 화면 캡처</button>
+              <button class="btn primary" id="empty-capture">화면 캡처</button>
             </div>
             <div class="canvas-wrap" id="canvas-wrap" hidden>
               <canvas id="preview"></canvas>
@@ -159,58 +159,48 @@
 
           <aside class="sidebar">
             <nav class="tabs" id="tabs">
-              <button class="tab active" data-tab="filters">필터</button>
-              <button class="tab" data-tab="ai">AI</button>
+              <button class="tab active" data-tab="adjust">보정</button>
               <button class="tab" data-tab="stamps">스탬프</button>
               <button class="tab" data-tab="background">배경</button>
-              <button class="tab" data-tab="settings">설정</button>
             </nav>
 
-            <!-- 필터 -->
-            <section class="panel active" data-panel="filters">
-              <h2>필터 프리셋</h2>
+            <!-- 보정 = 프리셋 + AI + 세부 조정 -->
+            <section class="panel active" data-panel="adjust">
+              <h2>프리셋</h2>
               <div class="preset-grid" id="filter-presets"></div>
-              <h2>세부 조정</h2>
-              <div class="sliders" id="filter-sliders"></div>
-              <button class="btn wide" id="btn-filter-reset">필터 초기화</button>
-            </section>
 
-            <!-- AI -->
-            <section class="panel" data-panel="ai">
-              <h2>AI 필터 <span class="badge-note">Claude API</span></h2>
-              <p class="desc">필터를 선택하면 이미지를 분석해 그 이미지에 맞는 보정을 적용합니다.</p>
+              <h2>AI 보정 <span class="badge-note">Claude</span></h2>
               <div class="ai-key-warning" id="ai-key-warning" hidden>
-                🔑 <b>API 키가 필요합니다.</b> <a href="#" id="goto-settings">설정 탭</a>에서 Anthropic API 키를 입력하세요.
+                API 키가 없습니다 — <a href="#" id="goto-settings">설정 › 연결</a> 에서 입력하세요.
               </div>
               <div class="ai-filter-list" id="ai-filters"></div>
-              <h2>직접 지시</h2>
               <div class="row">
                 <input id="ai-custom-prompt" class="input" type="text"
-                  placeholder="예: 새벽 감성으로 차갑고 몽환적이게" />
+                  placeholder="직접 지시 — 예: 새벽 감성으로" />
                 <button class="btn" id="btn-ai-custom">적용</button>
               </div>
               <div class="ai-comment" id="ai-comment" hidden></div>
-              <h2>외부 변환 API <span class="badge-note">선택</span></h2>
-              <p class="desc">
-                배경 제거·스타일 변환처럼 픽셀 자체를 바꾸는 자체 API 서버가 있다면 연결하세요.
-                <code>POST {image, instruction} → {image}</code>
-              </p>
-              <div class="row">
-                <input id="ai-endpoint-instruction" class="input" type="text" placeholder="변환 지시 (선택)" />
-                <button class="btn" id="btn-ai-transform">변환 실행</button>
+              <div class="row" id="ai-endpoint-row" hidden>
+                <input id="ai-endpoint-instruction" class="input" type="text" placeholder="외부 변환 지시" />
+                <button class="btn" id="btn-ai-transform">변환</button>
               </div>
+
+              <h2>세부 조정</h2>
+              <div class="sliders" id="filter-sliders"></div>
+              <button class="btn wide" id="btn-filter-reset">보정 초기화</button>
             </section>
 
             <!-- 스탬프 -->
             <section class="panel" data-panel="stamps">
-              <h2>스탬프 추가</h2>
+              <h2>추가</h2>
               <div class="preset-grid" id="stamp-presets"></div>
               <div class="row">
                 <select id="stamp-emoji" class="select"></select>
-                <button class="btn" id="btn-stamp-emoji">이모지 추가</button>
+                <button class="btn" id="btn-stamp-emoji">이모지</button>
               </div>
-              <h2>스탬프 목록</h2>
-              <p class="desc">미리보기에서 드래그해 위치를 옮길 수 있어요. <kbd>Del</kbd> 로 삭제.</p>
+
+              <h2>목록</h2>
+              <p class="desc">미리보기에서 드래그해 위치를 옮기고, <kbd>Del</kbd> 로 삭제합니다.</p>
               <ul class="stamp-list" id="stamp-list"></ul>
               <div id="stamp-editor" hidden>
                 <h2>선택한 스탬프</h2>
@@ -237,17 +227,20 @@
 
             <!-- 배경 -->
             <section class="panel" data-panel="background">
-              <h2>스마트 배경 필터</h2>
+              <h2>스마트 프리셋</h2>
               <p class="desc">하나를 누르면 여백 제거·배경·비율이 한 번에 세팅됩니다.</p>
               <div class="smart-list" id="smart-backgrounds"></div>
+
               <h2>배경</h2>
               <div class="bg-grid" id="bg-presets"></div>
               <div class="field" id="bg-solid-field" hidden>
-                <label>배경 색상</label>
+                <label>색상</label>
                 <input id="bg-solid-color" type="color" class="color" />
               </div>
+
               <h2>비율</h2>
               <div class="ratio-row" id="ratio-buttons"></div>
+
               <h2>레이아웃</h2>
               <div class="sliders" id="bg-sliders"></div>
               <div class="field">
@@ -261,25 +254,48 @@
                   <option value="800">800px</option>
                 </select>
               </div>
-              <button class="btn wide" id="btn-auto-trim">✂️ 자동 여백 제거 (창 밖 정리)</button>
+              <button class="btn wide" id="btn-auto-trim">자동 여백 제거</button>
             </section>
+          </aside>
+        </main>
+      </div>
+    </div>
 
-            <!-- 설정 -->
-            <section class="panel" data-panel="settings">
-              <h2>퀵 캡처 (캡처 후 자동 동작)</h2>
-              <p class="desc">셔터만 누르면 나머지는 자동 — 창을 띄우지 않고 캡처를 끝냅니다.</p>
+    <!-- ================= 설정 — 독립 창 ================= -->
+    <div id="settings-backdrop" hidden>
+      <div class="app-window settings-window" id="settings-window">
+        <div class="titlebar plain">
+          <div class="win-title">설정</div>
+          <div class="win-tools">
+            <button id="settings-close" class="icon-btn" title="닫기 (Esc)"></button>
+          </div>
+        </div>
+
+        <main class="layout">
+          <nav class="sect-rail" id="settings-rail">
+            <button class="sect active" data-sect="capture">캡처</button>
+            <button class="sect" data-sect="keys">단축키</button>
+            <button class="sect" data-sect="connect">연결</button>
+          </nav>
+
+          <div class="sect-body">
+            <!-- 캡처 -->
+            <section class="sect-panel active" data-sect-panel="capture">
+              <h2>캡처 후 자동 동작</h2>
+              <p class="desc">셔터만 누르면 나머지는 자동 — 창을 띄우지 않고 끝냅니다.</p>
               <div class="check-col">
                 <label><input type="checkbox" id="qk-enabled" /> 퀵 캡처 켜기</label>
-                <label><input type="checkbox" id="qk-trim" /> 자동 여백 제거 (창 밖 정리)</label>
-                <label><input type="checkbox" id="qk-copy" /> 자동으로 클립보드에 복사</label>
-                <label><input type="checkbox" id="qk-save" /> 자동으로 파일 저장</label>
+                <label><input type="checkbox" id="qk-trim" /> 자동 여백 제거</label>
+                <label><input type="checkbox" id="qk-copy" /> 클립보드에 복사</label>
+                <label><input type="checkbox" id="qk-save" /> 파일로 저장</label>
               </div>
               <div class="sliders" id="qk-sliders"></div>
+
               <div id="native-settings" hidden>
                 <h2>전역 단축키 <span class="badge-note">데스크톱</span></h2>
                 <p class="desc">
-                  앱이 백그라운드/트레이에 있어도 동작합니다.
-                  형식 예: <code>CommandOrControl+Shift+1</code>, <code>Alt+F1</code>
+                  앱이 트레이에 있어도 동작합니다. 예:
+                  <code>CommandOrControl+Shift+1</code>
                 </p>
                 <div class="field">
                   <label>빠른 캡처</label>
@@ -289,20 +305,37 @@
                   <label>캡처+편집</label>
                   <input id="ns-edit" class="input" type="text" spellcheck="false" />
                 </div>
-                <button class="btn wide" id="ns-apply">전역 단축키 적용</button>
+                <button class="btn wide" id="ns-apply">적용</button>
                 <p class="desc" id="ns-status"></p>
               </div>
-              <h2>단축키</h2>
-              <p class="desc">항목을 클릭한 뒤 원하는 키 조합을 누르면 바로 설정됩니다. <kbd>Esc</kbd> 취소.</p>
-              <ul class="shortcut-list" id="shortcut-list"></ul>
-              <button class="btn wide" id="btn-shortcut-reset">단축키 기본값 복원</button>
-              <h2>Anthropic API 키</h2>
-              <p class="desc">AI 필터에 사용됩니다. 키는 이 브라우저의 localStorage 에만 저장됩니다.</p>
-              <input id="api-key" class="input wide" type="password" placeholder="sk-ant-..." autocomplete="off" />
-              <h2>외부 변환 API URL</h2>
-              <input id="transform-endpoint" class="input wide" type="url" placeholder="https://my-server.example/transform" />
             </section>
-          </aside>
+
+            <!-- 단축키 -->
+            <section class="sect-panel" data-sect-panel="keys">
+              <div class="keys-bar">
+                <input id="shortcut-search" class="input" type="search" placeholder="단축키 검색" />
+                <button class="btn sm" id="btn-shortcut-reset" title="모든 단축키를 기본값으로">기본값</button>
+              </div>
+              <p class="desc">키 배지를 누른 뒤 원하는 조합을 입력하세요. <kbd>Esc</kbd> 로 취소.</p>
+              <div id="shortcut-list"></div>
+              <p class="desc" id="shortcut-empty" hidden>검색 결과가 없습니다.</p>
+            </section>
+
+            <!-- 연결 -->
+            <section class="sect-panel" data-sect-panel="connect">
+              <h2>Anthropic API 키</h2>
+              <p class="desc">AI 보정에 사용합니다. 이 브라우저의 localStorage 에만 저장됩니다.</p>
+              <input id="api-key" class="input wide" type="password" placeholder="sk-ant-..." autocomplete="off" />
+
+              <h2>외부 변환 API <span class="badge-note">선택</span></h2>
+              <p class="desc">
+                픽셀 자체를 바꾸는 자체 서버가 있다면 연결하세요.
+                <code>POST {image, instruction} → {image}</code>
+              </p>
+              <input id="transform-endpoint" class="input wide" type="url"
+                placeholder="https://my-server.example/transform" />
+            </section>
+          </div>
         </main>
       </div>
     </div>

@@ -95,7 +95,8 @@ try {
   await page.locator("#act-edit").click();
   check("편집 창 표시", await page.locator("#editor-window").isVisible());
   check("신호등 버튼 3개", (await page.locator(".titlebar .light").count()) === 3);
-  check("탭 5개", (await page.locator(".tab").count()) === 5);
+  check("편집 탭 3개 (보정/스탬프/배경)", (await page.locator(".tab").count()) === 3);
+  check("설정은 편집 창에 없음", (await page.locator('[data-panel="settings"]').count()) === 0);
   check("미리보기 캔버스 표시", await page.locator("#preview").isVisible());
 
   console.log("\n[4] 자동 여백 제거 (배경 필터 — 창 밖 정리)");
@@ -158,19 +159,31 @@ try {
     JSON.stringify(exportSize),
   );
 
-  console.log("\n[8] 단축키 UI/충돌 처리");
-  await page.locator("body").press("5"); // 설정 탭
-  check("숫자키로 탭 전환", await page.locator('[data-panel="settings"]').evaluate(
+  console.log("\n[8] 설정 창 — 섹션 / 단축키 그룹 / 검색 / 재할당");
+  await page.locator("body").press("3"); // 배경 탭
+  check("숫자키로 편집 탭 전환", await page.locator('[data-panel="background"]').evaluate(
     (el) => el.classList.contains("active"),
   ));
+  await page.locator("body").press(","); // open-settings
+  check("',' 로 설정 창 열림", await page.locator("#settings-window").isVisible());
+  check("설정 창은 편집 창과 분리", await page.locator("#editor-window").isVisible());
+  check("기본 섹션 = 캡처", (await page.evaluate(() => window.__cb.getSettingsSection())) === "capture");
+
+  await page.locator('.sect[data-sect="keys"]').click();
+  check("단축키 섹션 전환", (await page.evaluate(() => window.__cb.getSettingsSection())) === "keys");
+  check("단축키 그룹 3개 (촬영/편집/창)", (await page.locator("#shortcut-list .sc-group").count()) === 3);
+  const allRows = await page.locator("#shortcut-list .sc-row").count();
+
+  await page.locator("#shortcut-search").fill("영역");
+  const filteredRows = await page.locator("#shortcut-list .sc-row").count();
+  check("검색으로 목록 좁혀짐", filteredRows === 1 && allRows > filteredRows, `${filteredRows}/${allRows}`);
+  await page.locator("#shortcut-search").fill("");
+  check("검색 해제 시 전체 복원", (await page.locator("#shortcut-list .sc-row").count()) === allRows);
+
   // 첫 번째 항목(화면 캡처) 녹화 → F9 입력
-  await page.locator("#shortcut-list li >> nth=0 >> .shortcut-key").click();
-  check(
-    "녹화 모드 진입",
-    await page.locator("#shortcut-list li >> nth=0 >> .shortcut-key").evaluate((el) =>
-      el.classList.contains("recording"),
-    ),
-  );
+  const firstKey = page.locator("#shortcut-list .sc-row >> nth=0 >> .sc-key");
+  await firstKey.click();
+  check("녹화 모드 진입", await firstKey.evaluate((el) => el.classList.contains("recording")));
   await page.locator("body").press("F9");
   const rebound = await page.evaluate(() => window.__cb.getState().shortcuts["capture-screen"]);
   check("F9 로 재할당", rebound?.key === "F9", JSON.stringify(rebound));
@@ -178,6 +191,9 @@ try {
     JSON.parse(localStorage.getItem("capture-beauty:settings:v1") ?? "{}"),
   );
   check("단축키 localStorage 저장", persisted?.shortcuts?.["capture-screen"]?.key === "F9");
+  await page.locator("body").press("Escape");
+  check("Esc 로 설정 창만 닫힘", await page.locator("#settings-backdrop").isHidden()
+    && await page.locator("#editor-window").isVisible());
 
   console.log("\n[9] 창 동작 (닫기/단축키 토글/드래그)");
   const beforeDrag = await page.locator("#editor-window").boundingBox();
@@ -196,10 +212,15 @@ try {
   await page.locator("body").press("e"); // toggle-editor 기본 단축키
   check("단축키 E 로 편집 창 다시 열기", await page.locator("#editor-window").isVisible());
 
-  console.log("\n[10] AI 패널 (키 없음 상태)");
-  await page.locator("body").press("2");
+  console.log("\n[10] 보정 탭의 AI 섹션 (키 없음 상태)");
+  await page.locator("body").press("1");
+  check("보정 탭 활성", await page.locator('[data-panel="adjust"]').evaluate(
+    (el) => el.classList.contains("active"),
+  ));
   check("API 키 경고 표시", await page.locator("#ai-key-warning").isVisible());
   check("AI 필터 버튼 5개", (await page.locator(".ai-filter").count()) === 5);
+  check("필터 프리셋도 같은 탭", await page.locator("#filter-presets").isVisible());
+  check("외부 변환 행은 미설정 시 숨김", await page.locator("#ai-endpoint-row").isHidden());
 
   console.log("\n[11] 연속 캡처 세션 (스트림 주입 → 선택창 없는 즉시 캡처)");
   await page.locator("#win-close").click(); // 캡처 화면으로 복귀

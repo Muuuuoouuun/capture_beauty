@@ -17,6 +17,7 @@ import {
   stampDisplayText,
 } from "./stamps";
 import {
+  ACTION_GROUPS,
   ACTIONS,
   formatCombo,
   ShortcutManager,
@@ -110,6 +111,7 @@ const vfHint = $("#vf-hint");
 const captureActions = $("#capture-actions");
 const editorBackdrop = $("#editor-backdrop");
 const editorWindow = $("#editor-window");
+const settingsBackdrop = $("#settings-backdrop");
 
 function toast(message: string, kind: "info" | "success" | "error" = "info"): void {
   const box = $("#toasts");
@@ -167,6 +169,38 @@ function closeEditor(): void {
 function toggleEditor(): void {
   if (isEditorOpen()) closeEditor();
   else openEditor();
+}
+
+/* ---------- 설정 창 (앱 전역 설정 — 편집과 분리) ---------- */
+
+type SettingsSection = "capture" | "keys" | "connect";
+
+function isSettingsOpen(): boolean {
+  return !settingsBackdrop.hidden;
+}
+
+function openSettings(section?: SettingsSection): void {
+  settingsBackdrop.hidden = false;
+  if (section) switchSettingsSection(section);
+}
+
+function closeSettings(): void {
+  settingsBackdrop.hidden = true;
+  cancelRecording?.();
+}
+
+function toggleSettings(): void {
+  if (isSettingsOpen()) closeSettings();
+  else openSettings();
+}
+
+function switchSettingsSection(name: SettingsSection): void {
+  document.querySelectorAll<HTMLButtonElement>(".sect").forEach((b) => {
+    b.classList.toggle("active", b.dataset.sect === name);
+  });
+  document.querySelectorAll<HTMLElement>(".sect-panel").forEach((p) => {
+    p.classList.toggle("active", p.dataset.sectPanel === name);
+  });
 }
 
 /** 사진기 셔터 플래시 효과 */
@@ -917,7 +951,7 @@ function buildAiPanel(): void {
 
   $("#goto-settings").addEventListener("click", (e) => {
     e.preventDefault();
-    switchTab("settings");
+    openSettings("connect");
     $<HTMLInputElement>("#api-key").focus();
   });
 
@@ -932,8 +966,8 @@ function refreshAiKeyWarning(): void {
 async function runAiFilter(id: string, instruction: string, label: string): Promise<void> {
   if (!requireImage()) return;
   if (!settings.apiKey.trim()) {
-    toast("설정 탭에서 Anthropic API 키를 먼저 입력해주세요.", "error");
-    openEditor("settings");
+    toast("설정 › 연결에서 Anthropic API 키를 먼저 입력해주세요.", "error");
+    openSettings("connect");
     return;
   }
   try {
@@ -963,8 +997,8 @@ async function runEndpointTransform(): Promise<void> {
   if (!requireImage()) return;
   const endpoint = settings.transformEndpoint.trim();
   if (!endpoint) {
-    toast("설정 탭에서 외부 변환 API URL 을 먼저 입력해주세요.", "error");
-    openEditor("settings");
+    toast("설정 › 연결에서 외부 변환 API URL 을 먼저 입력해주세요.", "error");
+    openSettings("connect");
     return;
   }
   const instruction = $<HTMLInputElement>("#ai-endpoint-instruction").value.trim();
@@ -1713,7 +1747,7 @@ function syncDeckSummary(): void {
     addChip(quickChipLabel(), {
       title: "캡처 후 자동 동작 — 클릭해서 설정",
       iconName: "zap",
-      onClick: () => openEditor("settings"),
+      onClick: () => openSettings("capture"),
     });
   }
 }
@@ -1760,7 +1794,7 @@ function buildHomeDeck(): void {
     funRow.appendChild(chip);
   }
 
-  $("#qk-chip").addEventListener("click", () => openEditor("settings"));
+  $("#qk-chip").addEventListener("click", () => openSettings("capture"));
   renderProfileRow();
   syncLookUI();
   syncFunRow();
@@ -1769,13 +1803,15 @@ function buildHomeDeck(): void {
 }
 
 /* =========================================================
- * 설정 패널 (단축키 + API 키)
+ * 설정 창 — 캡처 / 단축키 / 연결
  * ========================================================= */
 
 let cancelRecording: (() => void) | null = null;
+/** 단축키 검색어 (소문자) */
+let shortcutQuery = "";
 
-function buildSettingsPanel(): void {
-  // 퀵 캡처 설정
+function buildSettingsWindow(): void {
+  // 캡처 후 자동 동작
   const quickChecks: [string, keyof Omit<QuickSettings, "thumbnailSec">][] = [
     ["#qk-enabled", "enabled"],
     ["#qk-trim", "autoTrim"],
@@ -1805,14 +1841,20 @@ function buildSettingsPanel(): void {
   );
   qkSliders.appendChild(thumbSlider);
 
+  // 단축키
   renderShortcutList();
-
+  const search = $<HTMLInputElement>("#shortcut-search");
+  search.addEventListener("input", () => {
+    shortcutQuery = search.value.trim().toLowerCase();
+    renderShortcutList();
+  });
   $("#btn-shortcut-reset").addEventListener("click", () => {
     manager.resetAll();
     renderShortcutList();
     toast("단축키를 기본값으로 되돌렸습니다.", "success");
   });
 
+  // 연결
   const apiKeyInput = $<HTMLInputElement>("#api-key");
   apiKeyInput.value = settings.apiKey;
   apiKeyInput.addEventListener("change", () => {
@@ -1827,6 +1869,17 @@ function buildSettingsPanel(): void {
   endpointInput.addEventListener("change", () => {
     settings.transformEndpoint = endpointInput.value.trim();
     saveSettings(settings);
+    refreshEndpointRow();
+  });
+  refreshEndpointRow();
+
+  // 창 조작 — 섹션 전환 / 닫기 / 바깥 클릭
+  document.querySelectorAll<HTMLButtonElement>(".sect").forEach((btn) => {
+    btn.addEventListener("click", () => switchSettingsSection(btn.dataset.sect as SettingsSection));
+  });
+  $("#settings-close").addEventListener("click", closeSettings);
+  settingsBackdrop.addEventListener("pointerdown", (e) => {
+    if (e.target === settingsBackdrop) closeSettings();
   });
 
   manager.onChange = (map) => {
@@ -1836,35 +1889,69 @@ function buildSettingsPanel(): void {
   };
 }
 
+/** 외부 변환 API 는 설정된 경우에만 편집 창에 나타난다 */
+function refreshEndpointRow(): void {
+  $("#ai-endpoint-row").hidden = settings.transformEndpoint.trim().length === 0;
+}
+
 function renderShortcutList(): void {
   const list = $("#shortcut-list");
   list.innerHTML = "";
-  for (const action of ACTIONS) {
-    const li = document.createElement("li");
-    const label = document.createElement("span");
-    label.className = "label";
-    label.textContent = action.label;
+  let shown = 0;
 
-    const keyBtn = document.createElement("button");
-    const combo = manager.getCombo(action.id);
-    keyBtn.className = `shortcut-key ${combo ? "" : "empty"}`.trim();
-    keyBtn.textContent = formatCombo(combo);
-    keyBtn.title = "클릭 후 원하는 키를 누르세요";
-    keyBtn.addEventListener("click", () => startRecordShortcut(action.id, keyBtn));
+  for (const group of ACTION_GROUPS) {
+    const actions = ACTIONS.filter((a) => a.group === group && matchesShortcutQuery(a.label, a.id));
+    if (actions.length === 0) continue;
 
-    const clearBtn = document.createElement("button");
-    clearBtn.className = "shortcut-clear";
-    clearBtn.textContent = "✕";
-    clearBtn.title = "단축키 해제";
-    clearBtn.addEventListener("click", () => {
-      manager.clear(action.id);
-      renderShortcutList();
-    });
-
-    li.append(label, keyBtn, clearBtn);
-    list.appendChild(li);
+    const section = document.createElement("div");
+    section.className = "sc-group";
+    const title = document.createElement("h3");
+    title.textContent = group;
+    const ul = document.createElement("ul");
+    for (const action of actions) {
+      ul.appendChild(buildShortcutRow(action.id, action.label));
+      shown++;
+    }
+    section.append(title, ul);
+    list.appendChild(section);
   }
+
+  $("#shortcut-empty").hidden = shown > 0;
   updateShortcutHints();
+}
+
+function matchesShortcutQuery(label: string, id: ActionId): boolean {
+  if (!shortcutQuery) return true;
+  const combo = formatCombo(manager.getCombo(id)).toLowerCase();
+  return label.toLowerCase().includes(shortcutQuery) || combo.includes(shortcutQuery);
+}
+
+function buildShortcutRow(id: ActionId, label: string): HTMLLIElement {
+  const li = document.createElement("li");
+  li.className = "sc-row";
+
+  const name = document.createElement("span");
+  name.className = "label";
+  name.textContent = label;
+
+  const combo = manager.getCombo(id);
+  const keyBtn = document.createElement("button");
+  keyBtn.className = `sc-key ${combo ? "" : "empty"}`.trim();
+  keyBtn.textContent = formatCombo(combo);
+  keyBtn.title = "클릭 후 원하는 키를 누르세요";
+  keyBtn.addEventListener("click", () => startRecordShortcut(id, keyBtn));
+
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "sc-clear";
+  clearBtn.innerHTML = icon("x", 12);
+  clearBtn.title = "단축키 해제";
+  clearBtn.addEventListener("click", () => {
+    manager.clear(id);
+    renderShortcutList();
+  });
+
+  li.append(name, keyBtn, clearBtn);
+  return li;
 }
 
 function startRecordShortcut(id: ActionId, btn: HTMLButtonElement): void {
@@ -1984,20 +2071,26 @@ function bindActions(): void {
     "stamp-seal": () => addStamp(STAMP_PRESETS.find((p) => p.id === "seal-approve")!.make()),
     "cycle-ratio": cycleRatio,
     "auto-trim": () => void doAutoTrim(false),
-    "tab-filters": () => openEditor("filters"),
-    "tab-ai": () => openEditor("ai"),
+    "tab-adjust": () => openEditor("adjust"),
     "tab-stamps": () => openEditor("stamps"),
     "tab-background": () => openEditor("background"),
-    "tab-settings": () => openEditor("settings"),
+    "open-settings": toggleSettings,
   };
   for (const [id, fn] of Object.entries(handlers)) manager.on(id as ActionId, fn);
 
   window.addEventListener("keydown", (e) => {
-    // Esc: 편집 창 닫기 (단축키 녹화 중이 아닐 때 — 녹화 취소는 매니저가 처리)
-    if (e.key === "Escape" && !manager.isRecording && !isEditable(e.target) && isEditorOpen()) {
-      closeEditor();
-      e.preventDefault();
-      return;
+    // Esc: 위에 떠 있는 창부터 닫기 (녹화 중 Esc 는 매니저가 취소로 처리)
+    if (e.key === "Escape" && !manager.isRecording) {
+      if (isSettingsOpen()) {
+        closeSettings();
+        e.preventDefault();
+        return;
+      }
+      if (isEditorOpen() && !isEditable(e.target)) {
+        closeEditor();
+        e.preventDefault();
+        return;
+      }
     }
     // 선택된 스탬프 삭제 (녹화 중이 아닐 때)
     if ((e.key === "Delete" || e.key === "Backspace") && !manager.isRecording && !isEditable(e.target)) {
@@ -2023,7 +2116,7 @@ function bindInputSources(): void {
   $("#cam-paste").addEventListener("click", () => void doPaste());
   $("#cam-live").addEventListener("click", () => void toggleSession());
   $("#cam-widget").addEventListener("click", () => void toggleWidget());
-  $("#cam-settings").addEventListener("click", () => openEditor("settings"));
+  $("#cam-settings").addEventListener("click", () => openSettings());
   $("#deck-toggle").addEventListener("click", toggleDeck);
   $("#shots-save-all").addEventListener("click", () => void saveAllShots());
   $("#shots-clear").addEventListener("click", clearShots);
@@ -2215,6 +2308,10 @@ declare global {
       openEditor: (tab?: string) => void;
       closeEditor: () => void;
       isEditorOpen: () => boolean;
+      openSettings: (section?: "capture" | "keys" | "connect") => void;
+      closeSettings: () => void;
+      isSettingsOpen: () => boolean;
+      getSettingsSection: () => string | null;
       sessionActive: () => boolean;
       stopSession: () => void;
       /** e2e: getDisplayMedia 대신 canvas.captureStream 으로 세션 연결 */
@@ -2262,6 +2359,11 @@ function exposeTestHook(): void {
     openEditor,
     closeEditor,
     isEditorOpen,
+    openSettings,
+    closeSettings,
+    isSettingsOpen,
+    getSettingsSection: () =>
+      document.querySelector<HTMLElement>(".sect.active")?.dataset.sect ?? null,
     sessionActive: () => session.active,
     stopSession: () => session.stop(),
     connectSessionForTest: async () => {
@@ -2336,6 +2438,10 @@ function setupIcons(): void {
     ["#btn-reset", "eraser"],
     ["#btn-export", "download", "저장"],
     ["#btn-copy", "copy"],
+    ["#settings-close", "x", undefined, 15],
+    ["#empty-icon", "camera", undefined, 40],
+    ["#empty-capture", "camera", "화면 캡처"],
+    ["#btn-auto-trim", "crop", "자동 여백 제거"],
     ["#qt-copy", "copy", undefined, 13],
     ["#qt-save", "download", undefined, 13],
     ["#qt-edit", "pencil", undefined, 13],
@@ -2359,7 +2465,7 @@ function init(): void {
   buildAiPanel();
   buildStampPanel();
   buildBackgroundPanel();
-  buildSettingsPanel();
+  buildSettingsWindow();
   buildHomeDeck();
   applyDeckState();
   bindActions();

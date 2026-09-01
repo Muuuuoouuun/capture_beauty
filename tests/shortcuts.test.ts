@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ACTION_GROUPS,
   ACTIONS,
   comboFromEvent,
   combosEqual,
@@ -183,5 +184,20 @@ describe("기본 단축키 무결성", () => {
       expect(seen).not.toContain(key);
       seen.push(key);
     }
+  });
+
+  it("모든 액션이 알려진 그룹에 속한다", () => {
+    for (const a of ACTIONS) expect(ACTION_GROUPS).toContain(a.group);
+  });
+
+  it("빈 그룹이 없다 — 설정 목록에 모든 그룹이 나타난다", () => {
+    for (const g of ACTION_GROUPS) {
+      expect(ACTIONS.filter((a) => a.group === g).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("액션 id 가 중복되지 않는다", () => {
+    const ids = ACTIONS.map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

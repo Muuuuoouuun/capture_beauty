@@ -17,39 +17,45 @@ export type ActionId =
   | "stamp-seal"
   | "cycle-ratio"
   | "auto-trim"
-  | "tab-filters"
-  | "tab-ai"
+  | "tab-adjust"
   | "tab-stamps"
   | "tab-background"
-  | "tab-settings";
+  | "open-settings";
+
+/** 단축키 목록을 사람이 찾기 쉽게 나누는 단위 */
+export type ActionGroup = "촬영" | "편집" | "창";
+
+export const ACTION_GROUPS: ActionGroup[] = ["촬영", "편집", "창"];
 
 export interface ActionDef {
   id: ActionId;
   label: string;
+  group: ActionGroup;
 }
 
 export const ACTIONS: ActionDef[] = [
-  { id: "capture-screen", label: "화면 캡처 (셔터)" },
-  { id: "region-capture", label: "영역 캡처" },
-  { id: "toggle-session", label: "연속 캡처 연결/해제" },
-  { id: "toggle-widget", label: "캡처 위젯 열기/닫기" },
-  { id: "open-file", label: "이미지 열기" },
-  { id: "paste-clipboard", label: "클립보드 붙여넣기" },
-  { id: "export-image", label: "이미지 저장" },
-  { id: "copy-image", label: "이미지 복사" },
-  { id: "undo", label: "실행 취소" },
-  { id: "reset-edits", label: "편집 초기화" },
-  { id: "toggle-editor", label: "편집 창 열기/닫기" },
-  { id: "ai-enhance", label: "AI 자동 보정" },
-  { id: "stamp-date", label: "날짜 스탬프 추가" },
-  { id: "stamp-seal", label: "도장 스탬프 추가" },
-  { id: "cycle-ratio", label: "비율 순환" },
-  { id: "auto-trim", label: "자동 여백 제거" },
-  { id: "tab-filters", label: "필터 탭" },
-  { id: "tab-ai", label: "AI 탭" },
-  { id: "tab-stamps", label: "스탬프 탭" },
-  { id: "tab-background", label: "배경 탭" },
-  { id: "tab-settings", label: "설정 탭" },
+  { id: "capture-screen", label: "화면 캡처 (셔터)", group: "촬영" },
+  { id: "region-capture", label: "영역 캡처", group: "촬영" },
+  { id: "toggle-session", label: "연속 캡처 연결/해제", group: "촬영" },
+  { id: "toggle-widget", label: "캡처 위젯", group: "촬영" },
+  { id: "open-file", label: "이미지 열기", group: "촬영" },
+  { id: "paste-clipboard", label: "클립보드 붙여넣기", group: "촬영" },
+
+  { id: "ai-enhance", label: "AI 자동 보정", group: "편집" },
+  { id: "stamp-date", label: "날짜 스탬프", group: "편집" },
+  { id: "stamp-seal", label: "도장 스탬프", group: "편집" },
+  { id: "cycle-ratio", label: "비율 순환", group: "편집" },
+  { id: "auto-trim", label: "자동 여백 제거", group: "편집" },
+  { id: "undo", label: "실행 취소", group: "편집" },
+  { id: "reset-edits", label: "편집 초기화", group: "편집" },
+  { id: "export-image", label: "이미지 저장", group: "편집" },
+  { id: "copy-image", label: "이미지 복사", group: "편집" },
+
+  { id: "toggle-editor", label: "편집 창 열기/닫기", group: "창" },
+  { id: "tab-adjust", label: "보정 탭", group: "창" },
+  { id: "tab-stamps", label: "스탬프 탭", group: "창" },
+  { id: "tab-background", label: "배경 탭", group: "창" },
+  { id: "open-settings", label: "설정 창", group: "창" },
 ];
 
 const combo = (key: string, mods: Partial<KeyCombo> = {}): KeyCombo => ({
@@ -79,11 +85,10 @@ export function defaultShortcuts(): Record<ActionId, KeyCombo | null> {
     "stamp-seal": combo("d"),
     "cycle-ratio": combo("r"),
     "auto-trim": combo("w"),
-    "tab-filters": combo("1"),
-    "tab-ai": combo("2"),
-    "tab-stamps": combo("3"),
-    "tab-background": combo("4"),
-    "tab-settings": combo("5"),
+    "tab-adjust": combo("1"),
+    "tab-stamps": combo("2"),
+    "tab-background": combo("3"),
+    "open-settings": combo(","),
   };
 }
 
