@@ -18,7 +18,7 @@ export type ActionId =
   | "cycle-ratio"
   | "auto-trim"
   | "tab-adjust"
-  | "tab-stamps"
+  | "tab-marks"
   | "tab-background"
   | "open-settings";
 
@@ -53,7 +53,7 @@ export const ACTIONS: ActionDef[] = [
 
   { id: "toggle-editor", label: "편집 창 열기/닫기", group: "창" },
   { id: "tab-adjust", label: "보정 탭", group: "창" },
-  { id: "tab-stamps", label: "스탬프 탭", group: "창" },
+  { id: "tab-marks", label: "표시 탭", group: "창" },
   { id: "tab-background", label: "배경 탭", group: "창" },
   { id: "open-settings", label: "설정 창", group: "창" },
 ];
@@ -86,7 +86,7 @@ export function defaultShortcuts(): Record<ActionId, KeyCombo | null> {
     "cycle-ratio": combo("r"),
     "auto-trim": combo("w"),
     "tab-adjust": combo("1"),
-    "tab-stamps": combo("2"),
+    "tab-marks": combo("2"),
     "tab-background": combo("3"),
     "open-settings": combo(","),
   };

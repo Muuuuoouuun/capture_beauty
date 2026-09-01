@@ -148,7 +148,11 @@
               <button class="btn primary" id="empty-capture">화면 캡처</button>
             </div>
             <div class="canvas-wrap" id="canvas-wrap" hidden>
-              <canvas id="preview"></canvas>
+              <div class="preview-stack" id="preview-stack">
+                <canvas id="preview"></canvas>
+                <!-- 드래그 중인 주석/스탬프·선택 표시 전용 (합성 재실행 없이 즉시 갱신) -->
+                <canvas id="preview-overlay"></canvas>
+              </div>
             </div>
             <div class="statusbar" id="statusbar" hidden>
               <span id="status-size"></span>
@@ -160,7 +164,7 @@
           <aside class="sidebar">
             <nav class="tabs" id="tabs">
               <button class="tab active" data-tab="adjust">보정</button>
-              <button class="tab" data-tab="stamps">스탬프</button>
+              <button class="tab" data-tab="marks">표시</button>
               <button class="tab" data-tab="background">배경</button>
             </nav>
 
@@ -190,16 +194,26 @@
               <button class="btn wide" id="btn-filter-reset">보정 초기화</button>
             </section>
 
-            <!-- 스탬프 -->
-            <section class="panel" data-panel="stamps">
-              <h2>추가</h2>
+            <!-- 표시 = 주석 + 스탬프 -->
+            <section class="panel" data-panel="marks">
+              <h2>주석</h2>
+              <div class="tool-row" id="annotation-tools"></div>
+              <div class="anno-style" id="anno-style" hidden>
+                <div class="swatches" id="anno-swatches"></div>
+                <input id="anno-color" type="color" class="color sm" title="직접 색 고르기" />
+              </div>
+              <div class="sliders" id="anno-sliders"></div>
+              <p class="desc" id="anno-hint">도구를 고른 뒤 미리보기에서 드래그하세요.</p>
+              <button class="btn wide danger" id="btn-anno-clear" hidden>주석 모두 지우기</button>
+
+              <h2>스탬프</h2>
               <div class="preset-grid" id="stamp-presets"></div>
               <div class="row">
                 <select id="stamp-emoji" class="select"></select>
                 <button class="btn" id="btn-stamp-emoji">이모지</button>
               </div>
 
-              <h2>목록</h2>
+              <h2>스탬프 목록</h2>
               <p class="desc">미리보기에서 드래그해 위치를 옮기고, <kbd>Del</kbd> 로 삭제합니다.</p>
               <ul class="stamp-list" id="stamp-list"></ul>
               <div id="stamp-editor" hidden>

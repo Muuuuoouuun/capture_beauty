@@ -2,6 +2,7 @@ import type { BackgroundOptions, FilterParams, RawImage, Stamp, TrimInsets } fro
 import { applyFilters, isNeutral } from "./filters";
 import { computeLayout, getBackgroundPreset } from "./background";
 import { drawStamp, type StampBounds } from "./stamps";
+import { drawAnnotations, type Annotation } from "./annotations";
 
 export interface RenderInput {
   /** 보정 대상 이미지 (트림은 이미 적용된 상태) */
@@ -9,6 +10,8 @@ export interface RenderInput {
   filters: FilterParams;
   background: BackgroundOptions;
   stamps: Stamp[];
+  /** 화살표·박스·형광펜·모자이크 (이미지 영역 안에만 그려짐) */
+  annotations?: readonly Annotation[];
   /** 스탬프 날짜 고정용 (미지정 시 현재 시각) */
   now?: Date;
 }
@@ -161,6 +164,11 @@ export function renderComposite(input: RenderInput, cacheToken = "0"): RenderRes
   }
   ctx.drawImage(filtered, x, y);
   ctx.restore();
+
+  // 주석은 이미지 위 · 스탬프 아래 (모자이크가 이미지 픽셀을 읽어야 하므로 이 순서)
+  if (input.annotations?.length) {
+    drawAnnotations(ctx, input.annotations, { x, y, w: contentW, h: contentH });
+  }
 
   const stampBounds = new Map<string, StampBounds>();
   const now = input.now ?? new Date();

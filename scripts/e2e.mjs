@@ -95,7 +95,7 @@ try {
   await page.locator("#act-edit").click();
   check("편집 창 표시", await page.locator("#editor-window").isVisible());
   check("신호등 버튼 3개", (await page.locator(".titlebar .light").count()) === 3);
-  check("편집 탭 3개 (보정/스탬프/배경)", (await page.locator(".tab").count()) === 3);
+  check("편집 탭 3개 (보정/표시/배경)", (await page.locator(".tab").count()) === 3);
   check("설정은 편집 창에 없음", (await page.locator('[data-panel="settings"]').count()) === 0);
   check("미리보기 캔버스 표시", await page.locator("#preview").isVisible());
 
@@ -466,6 +466,106 @@ try {
   await page.locator("#shots-clear").click();
   await page.waitForTimeout(200);
   check("기록 비우기 → 스트립 숨김", await page.locator("#shot-strip").isHidden());
+
+  console.log("\n[21] 주석 도구 (화살표 · 모자이크)");
+  // 줄무늬 패턴 이미지 — 모자이크가 적용되면 회색으로 평균화된다
+  const striped = await page.evaluate(() => {
+    const c = document.createElement("canvas");
+    c.width = 400;
+    c.height = 260;
+    const x = c.getContext("2d");
+    x.fillStyle = "#ffffff";
+    x.fillRect(0, 0, 400, 260);
+    x.fillStyle = "#000000";
+    for (let i = 0; i < 400; i += 4) x.fillRect(i, 160, 2, 80);
+    return c.toDataURL("image/png");
+  });
+  await page.evaluate((d) => window.__cb.loadDataUrl(d), striped);
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.__cb.openEditor("marks"));
+  check("표시 탭 활성", await page.locator('[data-panel="marks"]').evaluate(
+    (el) => el.classList.contains("active"),
+  ));
+  check("주석 도구 5개 (선택+4)", (await page.locator("#annotation-tools .tool").count()) === 5);
+
+  // 화살표: 실제 드래그로 그린다
+  await page.locator('#annotation-tools .tool[data-tool="arrow"]').click();
+  check("도구 활성화", (await page.evaluate(() => window.__cb.getTool())) === "arrow");
+  const box = await page.locator("#preview").boundingBox();
+  const at = (nx, ny) => ({ x: box.x + box.width * nx, y: box.y + box.height * ny });
+  let p1 = at(0.2, 0.3);
+  let p2 = at(0.8, 0.3);
+  await page.mouse.move(p1.x, p1.y);
+  await page.mouse.down();
+  await page.mouse.move((p1.x + p2.x) / 2, p1.y, { steps: 3 });
+  check("드래그 중 오버레이만 갱신 (합성 없음)", await page.locator("#preview-overlay").isVisible());
+  await page.mouse.move(p2.x, p2.y, { steps: 3 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  let annos = await page.evaluate(() => window.__cb.getAnnotations());
+  check("화살표 1개 추가됨", annos.length === 1 && annos[0].kind === "arrow", JSON.stringify(annos));
+
+  // 모자이크: 줄무늬 영역을 덮는다
+  await page.locator('#annotation-tools .tool[data-tool="mosaic"]').click();
+  p1 = at(0.1, 0.68);
+  p2 = at(0.9, 0.88);
+  await page.mouse.move(p1.x, p1.y);
+  await page.mouse.down();
+  await page.mouse.move(p2.x, p2.y, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  annos = await page.evaluate(() => window.__cb.getAnnotations());
+  check("모자이크 1개 추가됨", annos.length === 2 && annos[1].kind === "mosaic", JSON.stringify(annos));
+
+  // 내보내기 픽셀 검증: 화살표 색 + 모자이크로 평균화된 중간톤
+  const pixels = await page.evaluate(async () => {
+    const url = window.__cb.exportDataUrl();
+    const img = new Image();
+    await new Promise((res) => {
+      img.onload = res;
+      img.src = url;
+    });
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const scan = (x0, y0, w, h, test) => {
+      const d = ctx.getImageData(x0, y0, w, h).data;
+      for (let i = 0; i < d.length; i += 4) if (test(d[i], d[i + 1], d[i + 2])) return true;
+      return false;
+    };
+    return {
+      arrowDrawn: scan(
+        Math.round(img.width * 0.35), Math.round(img.height * 0.26),
+        Math.round(img.width * 0.3), Math.round(img.height * 0.09),
+        (r, g, b) => r > 150 && g < 130 && b < 160,
+      ),
+      mosaicMidtone: scan(
+        Math.round(img.width * 0.2), Math.round(img.height * 0.72),
+        Math.round(img.width * 0.6), Math.round(img.height * 0.12),
+        (r, g, b) => r > 40 && r < 215 && Math.abs(r - g) < 12 && Math.abs(g - b) < 12,
+      ),
+      size: [img.width, img.height],
+    };
+  });
+  check("내보내기에 화살표가 찍힘", pixels.arrowDrawn, JSON.stringify(pixels));
+  check("모자이크로 줄무늬가 중간톤으로 뭉개짐", pixels.mosaicMidtone, JSON.stringify(pixels));
+
+  // Esc 로 도구 해제 → 클릭 선택 → Del 삭제
+  await page.locator("body").press("Escape");
+  check("Esc 로 도구 해제", (await page.evaluate(() => window.__cb.getTool())) === null);
+  const mid = at(0.5, 0.3);
+  await page.mouse.click(mid.x, mid.y);
+  await page.waitForTimeout(150);
+  await page.locator("body").press("Delete");
+  await page.waitForTimeout(200);
+  annos = await page.evaluate(() => window.__cb.getAnnotations());
+  check("클릭 선택 후 Del 로 삭제", annos.length === 1 && annos[0].kind === "mosaic", JSON.stringify(annos));
+
+  await page.locator("#btn-anno-clear").click();
+  await page.waitForTimeout(200);
+  check("모두 지우기", (await page.evaluate(() => window.__cb.getAnnotations())).length === 0);
 
   if (failures === 0) {
     console.log("\n🎉 e2e 스모크 테스트 전체 통과");

@@ -4,6 +4,9 @@ import { z } from "zod";
 import type { FilterParams } from "./types";
 import { defaultFilterParams } from "./filters";
 
+// 목록 메타데이터는 SDK 없는 별도 모듈에 두고 여기서 재수출한다
+export { AI_FILTERS, type AiFilterDef } from "./ai-filters";
+
 export const AI_MODEL = "claude-opus-5";
 
 /** Claude 가 반환하는 보정 파라미터 (구조화 출력으로 강제) */
@@ -22,50 +25,7 @@ export const AiAdjustmentsSchema = z.object({
 
 export type AiAdjustments = z.infer<typeof AiAdjustmentsSchema>;
 
-export interface AiFilterDef {
-  id: string;
-  name: string;
-  description: string;
-  instruction: string;
-}
-
 /** "특정 필터를 먹이면" AI API 가 호출되는 필터 목록 */
-export const AI_FILTERS: AiFilterDef[] = [
-  {
-    id: "ai-auto",
-    name: "✨ AI 자동 보정",
-    description: "이미지를 분석해 최적 보정값을 자동 적용",
-    instruction:
-      "이 이미지의 노출, 색감, 선명도를 진단하고 가장 자연스럽고 보기 좋게 만드는 보정값을 정해줘. 과보정은 피하고 원본의 느낌을 살려줘.",
-  },
-  {
-    id: "ai-vivid",
-    name: "🌈 생생하게",
-    description: "색감을 살리고 또렷하게",
-    instruction: "이 이미지에 맞춰 색이 생생하고 또렷해 보이도록 보정값을 정해줘. 인쇄물처럼 탁하지 않게.",
-  },
-  {
-    id: "ai-cinematic",
-    name: "🎬 시네마틱",
-    description: "영화 같은 톤과 분위기",
-    instruction:
-      "이 이미지에 어울리는 영화적인 색보정(시네마틱 그레이딩)을 해줘. 이미지의 내용과 분위기에 맞는 톤을 골라줘.",
-  },
-  {
-    id: "ai-mood",
-    name: "🌅 감성 무드",
-    description: "따뜻하고 감성적인 무드",
-    instruction: "이 이미지를 따뜻하고 감성적인 무드로 보정해줘. 소프트한 필름 느낌도 어울리면 살짝 더해줘.",
-  },
-  {
-    id: "ai-document",
-    name: "📄 문서 최적화",
-    description: "스크린샷·문서 가독성 최대화",
-    instruction:
-      "이 이미지는 화면 캡처/문서야. 글자가 또렷하게 읽히도록 대비와 선명도를 조정하고 색 왜곡을 제거해줘. 예술적 효과는 넣지 마.",
-  },
-];
-
 const SYSTEM_PROMPT =
   "너는 사진 보정 엔진이다. 입력 이미지를 보고 요청된 방향에 맞는 보정 파라미터를 결정한다. " +
   "파라미터 의미: brightness/contrast/saturation/temperature(+따뜻,-차가움)/tint(+마젠타,-녹색)는 -100..100, " +

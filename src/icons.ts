@@ -27,6 +27,13 @@ const PATHS = {
   trash: '<path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M7 6.5l1 14h8l1-14"/>',
   x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   crop: '<path d="M6.5 2.5v13a2 2 0 0 0 2 2h13"/><path d="M2.5 6.5h13a2 2 0 0 1 2 2v13"/>',
+  arrow: '<path d="M5 19 18.5 5.5"/><path d="M10.5 5.5h8v8"/>',
+  square: '<rect x="4.5" y="4.5" width="15" height="15" rx="3.5"/>',
+  marker:
+    '<path d="M4.5 20h15"/><path d="M8 16.5V13l6.6-6.6a1.6 1.6 0 0 1 2.3 0l1.2 1.2a1.6 1.6 0 0 1 0 2.3L11.5 16.5z"/>',
+  mosaic:
+    '<rect x="4" y="4" width="6.5" height="6.5" rx="1.2"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.2"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.2"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.2"/>',
+  cursor: '<path d="M6.5 3.8 18 10.8l-4.8 1.4-1.4 4.8z"/>',
   floppy:
     '<path d="M5 3.5h11l4.5 4.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 20V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M8 3.5V8.5h7"/><path d="M7.5 20v-6h9v6"/>',
 } as const;

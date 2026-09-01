@@ -15,7 +15,20 @@ import {
   STAMP_PRESETS,
   STAMP_STYLE_NAMES,
   stampDisplayText,
+  drawStamp,
 } from "./stamps";
+import {
+  ANNOTATION_TOOLS,
+  DEFAULT_ANNOTATION_COLOR,
+  DEFAULT_ANNOTATION_SIZE,
+  annotationBox,
+  createAnnotation,
+  drawAnnotations,
+  hitTestAnnotation,
+  isDegenerate,
+  type Annotation,
+  type AnnotationKind,
+} from "./annotations";
 import {
   ACTION_GROUPS,
   ACTIONS,
@@ -57,12 +70,8 @@ import {
   MAX_PROFILES,
   type CaptureProfile,
 } from "./profiles";
-import {
-  AI_FILTERS,
-  adjustmentsToFilterParams,
-  analyzeImage,
-  transformViaEndpoint,
-} from "./ai";
+// AI 목록은 가볍게 정적으로, 무거운 SDK(ai.ts)는 실제 호출 시에만 동적 로드
+import { AI_FILTERS } from "./ai-filters";
 
 /* =========================================================
  * 상태
@@ -75,6 +84,13 @@ let filters: FilterParams = defaultFilterParams();
 let bg: BackgroundOptions = defaultBackgroundOptions();
 let stamps: Stamp[] = [];
 let selectedStampId: string | null = null;
+/** 주석 레이어 (화살표·박스·형광펜·모자이크) */
+let annotations: Annotation[] = [];
+let selectedAnnotationId: string | null = null;
+/** 선택된 주석 도구 — null 이면 선택/이동 모드 */
+let activeTool: AnnotationKind | null = null;
+let annoColor = DEFAULT_ANNOTATION_COLOR;
+let annoSize = DEFAULT_ANNOTATION_SIZE;
 let activeFilterPresetId = "none";
 const history: HTMLCanvasElement[] = []; // 파괴적 작업(트림/AI 변환/새 이미지) 되돌리기
 const MAX_HISTORY = 10;
@@ -91,6 +107,10 @@ const armedStampIds = new Set<string>();
 let outputWidth = 0;
 
 const PREVIEW_MAX_DIM = 1600;
+/** 슬라이더를 끄는 동안 쓰는 저해상도 소스 — 픽셀 연산량을 ~4배 줄여 즉시 반응하게 한다 */
+const PREVIEW_FAST_DIM = 820;
+let previewSourceFast: HTMLCanvasElement | null = null;
+let fastPreview = false;
 
 /* =========================================================
  * DOM 헬퍼
@@ -103,6 +123,7 @@ const $ = <T extends HTMLElement>(sel: string): T => {
 };
 
 const previewEl = $<HTMLCanvasElement>("#preview");
+const overlayEl = $<HTMLCanvasElement>("#preview-overlay");
 const emptyState = $("#empty-state");
 const canvasWrap = $("#canvas-wrap");
 const statusbar = $("#statusbar");
@@ -230,62 +251,140 @@ function requestRender(): void {
 
 function renderPreview(): void {
   if (!previewSource || !baseCanvas) return;
+  const source = (fastPreview && previewSourceFast) || previewSource;
   const result = renderComposite(
-    { source: previewSource, filters, background: bg, stamps },
-    `prev-${baseVersion}`,
+    { source, filters, background: bg, stamps, annotations },
+    `${source === previewSource ? "prev" : "fast"}-${baseVersion}`,
   );
   lastRender = result;
   previewEl.width = result.canvas.width;
   previewEl.height = result.canvas.height;
-  const pctx = previewEl.getContext("2d")!;
-  pctx.drawImage(result.canvas, 0, 0);
-  drawSelectionDecor(pctx);
+  previewEl.getContext("2d")!.drawImage(result.canvas, 0, 0);
   // 카메라 뷰파인더에도 같은 결과 표시 (찍은 사진 리뷰 — 선택 표시는 제외)
   cameraPreviewEl.width = result.canvas.width;
   cameraPreviewEl.height = result.canvas.height;
   cameraPreviewEl.getContext("2d")!.drawImage(result.canvas, 0, 0);
-  updateStatus(result);
+  drawOverlay();
+  updateStatus(result, source);
 }
 
-/** 애플 캡처 느낌의 점선 선택 표시 — 편집 미리보기 전용 (내보내기에는 없음) */
-function drawSelectionDecor(ctx: CanvasRenderingContext2D): void {
-  if (!lastRender || !selectedStampId) return;
-  const b = lastRender.stampBounds.get(selectedStampId);
-  if (!b) return;
-  const r = lastRender.imageRect;
-  ctx.save();
+/* ---------- 오버레이 — 선택 표시 / 드래그 중인 요소 (합성 재실행 없음) ---------- */
 
-  // 이미지 틀 — 옅은 점선
+/** 그리는 중인 주석 (아직 확정 전) */
+let draftAnnotation: Annotation | null = null;
+/** 드래그 중인 스탬프 id */
+let draggingStampId: string | null = null;
+
+function drawOverlay(): void {
+  if (!lastRender) return;
+  if (overlayEl.width !== previewEl.width || overlayEl.height !== previewEl.height) {
+    overlayEl.width = previewEl.width;
+    overlayEl.height = previewEl.height;
+  }
+  const ctx = overlayEl.getContext("2d")!;
+  ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
+  const rect = lastRender.imageRect;
+
+  if (draftAnnotation) {
+    drawDraft(ctx, draftAnnotation, rect);
+    return;
+  }
+  if (draggingStampId) {
+    const s = stamps.find((st) => st.id === draggingStampId);
+    if (s) {
+      const b = drawStamp(ctx, s, rect.x, rect.y, rect.w, rect.h, new Date());
+      drawImageFrame(ctx, rect);
+      drawMarquee(ctx, b.cx - b.w / 2, b.cy - b.h / 2, b.w, b.h, true);
+    }
+    return;
+  }
+  drawSelectionDecor(ctx);
+}
+
+/**
+ * 그리는 중 미리보기. 모자이크는 오버레이에 원본 픽셀이 없어 실제 효과를 낼 수 없으므로
+ * 점선 마퀴로 영역만 보여주고, 확정 시 합성 단계에서 진짜 모자이크가 들어간다.
+ */
+function drawDraft(ctx: CanvasRenderingContext2D, a: Annotation, rect: RenderResult["imageRect"]): void {
+  if (a.kind === "mosaic") {
+    const b = annotationBox(a, rect);
+    ctx.save();
+    ctx.fillStyle = "rgba(180,180,200,0.28)";
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.restore();
+    drawMarquee(ctx, b.x, b.y, b.w, b.h, false);
+    return;
+  }
+  drawAnnotations(ctx, [a], rect);
+}
+
+/** 애플 캡처 느낌의 점선 선택 표시 — 오버레이 전용 (내보내기에는 없음) */
+function drawSelectionDecor(ctx: CanvasRenderingContext2D): void {
+  if (!lastRender) return;
+  const r = lastRender.imageRect;
+
+  if (selectedStampId) {
+    const b = lastRender.stampBounds.get(selectedStampId);
+    if (b) {
+      drawImageFrame(ctx, r);
+      drawMarquee(ctx, b.cx - b.w / 2, b.cy - b.h / 2, b.w, b.h, true);
+    }
+    return;
+  }
+  if (selectedAnnotationId) {
+    const a = annotations.find((an) => an.id === selectedAnnotationId);
+    if (a) {
+      const b = annotationBox(a, r);
+      const pad = 6;
+      drawMarquee(ctx, b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2, false);
+    }
+  }
+}
+
+/** 이미지 틀 — 옅은 점선 */
+function drawImageFrame(ctx: CanvasRenderingContext2D, r: RenderResult["imageRect"]): void {
+  ctx.save();
   ctx.setLineDash([6, 5]);
   ctx.lineWidth = 1;
   ctx.strokeStyle = "rgba(255,255,255,0.3)";
   ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  ctx.restore();
+}
 
-  // 선택 스탬프 — 대비 점선(검정 위 흰색) + 코너 핸들
-  const x = b.cx - b.w / 2;
-  const y = b.cy - b.h / 2;
+/** 대비 점선(검정 위 흰색) + 선택 시 코너 핸들 */
+function drawMarquee(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  handles: boolean,
+): void {
+  ctx.save();
   ctx.lineWidth = 1.5;
   ctx.setLineDash([6, 4]);
   ctx.strokeStyle = "rgba(0,0,0,0.75)";
-  ctx.strokeRect(x, y, b.w, b.h);
+  ctx.strokeRect(x, y, w, h);
   ctx.lineDashOffset = 5;
   ctx.strokeStyle = "#ffffff";
-  ctx.strokeRect(x, y, b.w, b.h);
+  ctx.strokeRect(x, y, w, h);
   ctx.setLineDash([]);
   ctx.lineDashOffset = 0;
-  for (const [hx, hy] of [
-    [x, y],
-    [x + b.w, y],
-    [x, y + b.h],
-    [x + b.w, y + b.h],
-  ] as const) {
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = "rgba(0,0,0,0.75)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.rect(hx - 3.5, hy - 3.5, 7, 7);
-    ctx.fill();
-    ctx.stroke();
+  if (handles) {
+    for (const [hx, hy] of [
+      [x, y],
+      [x + w, y],
+      [x, y + h],
+      [x + w, y + h],
+    ] as const) {
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "rgba(0,0,0,0.75)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(hx - 3.5, hy - 3.5, 7, 7);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }
@@ -295,7 +394,7 @@ function renderExport(): RenderResult {
   if (!baseCanvas) throw new Error("이미지가 없습니다.");
   invalidateFilterCache(); // 미리보기 캐시와 해상도가 다르므로 새로 계산
   const result = renderComposite(
-    { source: baseCanvas, filters, background: bg, stamps },
+    { source: baseCanvas, filters, background: bg, stamps, annotations },
     `full-${baseVersion}`,
   );
   invalidateFilterCache();
@@ -306,10 +405,10 @@ function renderExport(): RenderResult {
   return result;
 }
 
-function updateStatus(result: RenderResult): void {
+function updateStatus(result: RenderResult, source: HTMLCanvasElement): void {
   if (!baseCanvas) return;
   $("#status-size").textContent = `원본 ${baseCanvas.width}×${baseCanvas.height}`;
-  const scale = baseCanvas.width / (previewSource?.width ?? baseCanvas.width);
+  const scale = baseCanvas.width / source.width;
   const outW = Math.round(result.canvas.width * scale);
   const outH = Math.round(result.canvas.height * scale);
   $("#status-out").textContent = `출력 ${outW}×${outH}`;
@@ -324,6 +423,7 @@ function updateStatus(result: RenderResult): void {
   if (bg.preset !== "none") notes.push(`배경: ${BACKGROUND_PRESETS.find((b) => b.id === bg.preset)?.name}`);
   if (bg.ratio !== "auto") notes.push(`비율 ${bg.ratio}`);
   if (outputWidth > 0) notes.push(`출력 ↔${outputWidth}px`);
+  if (annotations.length) notes.push(`주석 ${annotations.length}개`);
   if (stamps.length) notes.push(`스탬프 ${stamps.length}개`);
   $("#status-note").textContent = notes.join(" · ");
 }
@@ -333,7 +433,12 @@ function setBaseCanvas(canvas: HTMLCanvasElement, opts: { pushHistory?: boolean 
   baseCanvas = canvas;
   baseVersion++;
   previewSource = downscaleCanvas(canvas, PREVIEW_MAX_DIM);
+  previewSourceFast = downscaleCanvas(canvas, PREVIEW_FAST_DIM);
   invalidateFilterCache();
+  // 주석 좌표는 이미지 콘텐츠 기준이라 이미지가 바뀌면(캡처·트림·자르기) 맞지 않는다
+  annotations = [];
+  selectedAnnotationId = null;
+  syncAnnotationUI();
   emptyState.hidden = true;
   canvasWrap.hidden = false;
   statusbar.hidden = false;
@@ -818,6 +923,29 @@ const FILTER_SLIDERS: SliderDef[] = [
 
 const filterSliderRefresh: (() => void)[] = [];
 
+/**
+ * 연속 조작(슬라이더 드래그) 동안은 저해상도로 그려 즉시 반응하게 하고,
+ * 손을 떼면(change) 원래 해상도로 한 번 더 그린다.
+ */
+let fastPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+
+function beginFastPreview(): void {
+  fastPreview = true;
+  if (fastPreviewTimer) clearTimeout(fastPreviewTimer);
+  // change 가 오지 않는 입력 경로를 위한 안전장치
+  fastPreviewTimer = setTimeout(endFastPreview, 220);
+}
+
+function endFastPreview(): void {
+  if (fastPreviewTimer) {
+    clearTimeout(fastPreviewTimer);
+    fastPreviewTimer = null;
+  }
+  if (!fastPreview) return;
+  fastPreview = false;
+  requestRender();
+}
+
 function makeSliderRow(
   label: string,
   min: number,
@@ -839,7 +967,9 @@ function makeSliderRow(
   input.addEventListener("input", () => {
     set(Number(input.value));
     out.textContent = input.value;
+    beginFastPreview();
   });
+  input.addEventListener("change", endFastPreview);
   row.append(lab, input, out);
   return {
     el: row,
@@ -971,16 +1101,23 @@ async function runAiFilter(id: string, instruction: string, label: string): Prom
     return;
   }
   try {
-    const adjustments = await withBusy(`${label} — 이미지를 분석하고 있어요…`, async () => {
-      const { base64, mediaType } = canvasToAnalysisBase64(baseCanvas!);
-      return analyzeImage({
-        apiKey: settings.apiKey.trim(),
-        imageBase64: base64,
-        mediaType,
-        instruction,
-      });
-    });
-    filters = adjustmentsToFilterParams(adjustments);
+    const { adjustments, toParams } = await withBusy(
+      `${label} — 이미지를 분석하고 있어요…`,
+      async () => {
+        const ai = await import("./ai"); // 무거운 SDK 는 여기서 처음 로드
+        const { base64, mediaType } = canvasToAnalysisBase64(baseCanvas!);
+        return {
+          adjustments: await ai.analyzeImage({
+            apiKey: settings.apiKey.trim(),
+            imageBase64: base64,
+            mediaType,
+            instruction,
+          }),
+          toParams: ai.adjustmentsToFilterParams,
+        };
+      },
+    );
+    filters = toParams(adjustments);
     setActiveFilterPreset(id === "custom" ? "custom" : id);
     refreshFilterUI();
     requestRender();
@@ -1003,9 +1140,10 @@ async function runEndpointTransform(): Promise<void> {
   }
   const instruction = $<HTMLInputElement>("#ai-endpoint-instruction").value.trim();
   try {
-    const resultDataUrl = await withBusy("외부 API 로 이미지를 변환하고 있어요…", () =>
-      transformViaEndpoint(endpoint, baseCanvas!.toDataURL("image/png"), instruction),
-    );
+    const resultDataUrl = await withBusy("외부 API 로 이미지를 변환하고 있어요…", async () => {
+      const { transformViaEndpoint } = await import("./ai");
+      return transformViaEndpoint(endpoint, baseCanvas!.toDataURL("image/png"), instruction);
+    });
     const canvas = await canvasFromDataUrl(resultDataUrl);
     setBaseCanvas(canvas, { pushHistory: true });
     toast("변환된 이미지를 적용했습니다. (↩️ 로 되돌리기 가능)", "success");
@@ -1190,10 +1328,17 @@ function refreshStampEditor(): void {
 
 /* ---------- 스탬프 드래그 ---------- */
 
-function setupStampDragging(): void {
-  let dragging: { id: string; offsetX: number; offsetY: number } | null = null;
+/* =========================================================
+ * 캔버스 인터랙션 — 주석 그리기 / 스탬프 드래그 / 선택
+ *
+ * 드래그 중에는 합성(renderComposite)을 절대 다시 돌리지 않는다.
+ * 움직이는 요소는 오버레이 캔버스에만 그리고, 손을 뗄 때 한 번만 합성한다.
+ * ========================================================= */
 
-  const toCanvasCoords = (e: PointerEvent): { x: number; y: number } => {
+function setupCanvasInteraction(): void {
+  let stampOffset = { x: 0, y: 0 };
+
+  const toCanvas = (e: PointerEvent): { x: number; y: number } => {
     const rect = previewEl.getBoundingClientRect();
     return {
       x: ((e.clientX - rect.left) / rect.width) * previewEl.width,
@@ -1211,44 +1356,240 @@ function setupStampDragging(): void {
     return null;
   };
 
-  previewEl.addEventListener("pointerdown", (e) => {
-    const { x, y } = toCanvasCoords(e);
-    const id = hitStamp(x, y);
-    selectStamp(id);
-    if (id && lastRender) {
-      const b = lastRender.stampBounds.get(id)!;
-      dragging = { id, offsetX: x - b.cx, offsetY: y - b.cy };
-      previewEl.classList.add("stamp-drag");
-      previewEl.setPointerCapture(e.pointerId);
+  const hitAnnotation = (x: number, y: number): string | null => {
+    if (!lastRender) return null;
+    for (let i = annotations.length - 1; i >= 0; i--) {
+      if (hitTestAnnotation(annotations[i], x, y, lastRender.imageRect)) return annotations[i].id;
     }
-    requestRender();
+    return null;
+  };
+
+  previewEl.addEventListener("pointerdown", (e) => {
+    if (!lastRender) return;
+    const { x, y } = toCanvas(e);
+    const r = lastRender.imageRect;
+    previewEl.setPointerCapture(e.pointerId);
+
+    if (activeTool) {
+      const nx = clamp((x - r.x) / r.w, 0, 1);
+      const ny = clamp((y - r.y) / r.h, 0, 1);
+      draftAnnotation = createAnnotation(activeTool, nx, ny, nx, ny, {
+        color: annoColor,
+        size: annoSize,
+      });
+      drawOverlay();
+      return;
+    }
+
+    const stampId = hitStamp(x, y);
+    if (stampId) {
+      const b = lastRender.stampBounds.get(stampId)!;
+      stampOffset = { x: x - b.cx, y: y - b.cy };
+      selectAnnotation(null);
+      selectStamp(stampId);
+      beginStampDrag(stampId);
+      return;
+    }
+    selectStamp(null);
+    selectAnnotation(hitAnnotation(x, y));
   });
 
   previewEl.addEventListener("pointermove", (e) => {
-    const { x, y } = toCanvasCoords(e);
-    if (dragging && lastRender) {
-      const s = stamps.find((st) => st.id === dragging!.id);
-      if (s) {
-        const r = lastRender.imageRect;
-        s.x = clamp((x - dragging.offsetX - r.x) / r.w, -0.08, 1.08);
-        s.y = clamp((y - dragging.offsetY - r.y) / r.h, -0.08, 1.08);
-        requestRender();
-      }
-    } else {
-      previewEl.classList.toggle("stamp-hover", hitStamp(x, y) !== null);
+    if (!lastRender) return;
+    const { x, y } = toCanvas(e);
+    const r = lastRender.imageRect;
+
+    if (draftAnnotation) {
+      draftAnnotation.x2 = clamp((x - r.x) / r.w, 0, 1);
+      draftAnnotation.y2 = clamp((y - r.y) / r.h, 0, 1);
+      drawOverlay();
+      return;
     }
+    if (draggingStampId) {
+      const s = stamps.find((st) => st.id === draggingStampId);
+      if (s) {
+        s.x = clamp((x - stampOffset.x - r.x) / r.w, -0.08, 1.08);
+        s.y = clamp((y - stampOffset.y - r.y) / r.h, -0.08, 1.08);
+        drawOverlay();
+      }
+      return;
+    }
+    previewEl.classList.toggle(
+      "stamp-hover",
+      !activeTool && (hitStamp(x, y) !== null || hitAnnotation(x, y) !== null),
+    );
   });
 
   const endDrag = (e: PointerEvent) => {
-    if (dragging) {
+    if (previewEl.hasPointerCapture(e.pointerId)) previewEl.releasePointerCapture(e.pointerId);
+
+    if (draftAnnotation) {
+      const a = draftAnnotation;
+      draftAnnotation = null;
+      if (!isDegenerate(a)) {
+        annotations.push(a);
+        syncAnnotationUI();
+      }
+      requestRender(); // 확정 시 1회만 합성
+      return;
+    }
+    if (draggingStampId) {
+      draggingStampId = null;
       previewEl.classList.remove("stamp-drag");
-      previewEl.releasePointerCapture(e.pointerId);
-      dragging = null;
       renderStampList();
+      requestRender();
     }
   };
   previewEl.addEventListener("pointerup", endDrag);
   previewEl.addEventListener("pointercancel", endDrag);
+}
+
+/** 드래그 대상 스탬프를 뺀 합성 결과를 고정 배경으로 깔아둔다 (이후 프레임은 오버레이만) */
+function beginStampDrag(id: string): void {
+  const source = (fastPreview && previewSourceFast) || previewSource;
+  if (!source) return;
+  draggingStampId = id;
+  previewEl.classList.add("stamp-drag");
+  const base = renderComposite(
+    {
+      source,
+      filters,
+      background: bg,
+      stamps: stamps.filter((s) => s.id !== id),
+      annotations,
+    },
+    `${source === previewSource ? "prev" : "fast"}-${baseVersion}`,
+  );
+  const ctx = previewEl.getContext("2d")!;
+  ctx.clearRect(0, 0, previewEl.width, previewEl.height);
+  ctx.drawImage(base.canvas, 0, 0);
+  drawOverlay();
+}
+
+/* =========================================================
+ * 주석 패널
+ * ========================================================= */
+
+const ANNO_COLORS = ["#ff3b5c", "#ffb020", "#22c55e", "#3b82f6", "#111827", "#ffffff"];
+
+function buildAnnotationPanel(): void {
+  const row = $("#annotation-tools");
+
+  const addTool = (id: AnnotationKind | null, name: string, iconName: Parameters<typeof icon>[0]) => {
+    const btn = document.createElement("button");
+    btn.className = "tool";
+    btn.dataset.tool = id ?? "";
+    btn.title = name;
+    btn.innerHTML = icon(iconName, 17);
+    btn.addEventListener("click", () => setTool(activeTool === id ? null : id));
+    row.appendChild(btn);
+  };
+  addTool(null, "선택 · 이동", "cursor");
+  for (const t of ANNOTATION_TOOLS) addTool(t.id, t.name, t.icon);
+
+  const swatches = $("#anno-swatches");
+  for (const c of ANNO_COLORS) {
+    const b = document.createElement("button");
+    b.className = "swatch";
+    b.dataset.color = c;
+    b.style.background = c;
+    b.title = c;
+    b.addEventListener("click", () => setAnnoColor(c));
+    swatches.appendChild(b);
+  }
+  const colorInput = $<HTMLInputElement>("#anno-color");
+  colorInput.value = annoColor;
+  colorInput.addEventListener("input", () => setAnnoColor(colorInput.value));
+
+  const { el } = makeSliderRow("크기", 5, 100, () => annoSize, (v) => {
+    annoSize = v;
+    applyToSelectedAnnotation((a) => (a.size = v));
+  });
+  $("#anno-sliders").appendChild(el);
+
+  $("#btn-anno-clear").addEventListener("click", clearAnnotations);
+  syncAnnotationUI();
+}
+
+function setAnnoColor(color: string): void {
+  annoColor = color;
+  $<HTMLInputElement>("#anno-color").value = color;
+  applyToSelectedAnnotation((a) => (a.color = color));
+  syncAnnotationUI();
+}
+
+function applyToSelectedAnnotation(fn: (a: Annotation) => void): void {
+  const a = annotations.find((an) => an.id === selectedAnnotationId);
+  if (!a) return;
+  fn(a);
+  requestRender();
+}
+
+function setTool(kind: AnnotationKind | null): void {
+  activeTool = kind;
+  if (kind) {
+    selectStamp(null);
+    selectAnnotation(null);
+  }
+  previewEl.classList.toggle("drawing", !!kind);
+  syncAnnotationUI();
+}
+
+function selectAnnotation(id: string | null): void {
+  selectedAnnotationId = id;
+  if (id) {
+    const a = annotations.find((an) => an.id === id);
+    if (a) {
+      annoColor = a.color;
+      annoSize = a.size;
+      $<HTMLInputElement>("#anno-color").value = a.color;
+    }
+  }
+  syncAnnotationUI();
+  drawOverlay();
+}
+
+function removeAnnotation(id: string): void {
+  annotations = annotations.filter((a) => a.id !== id);
+  if (selectedAnnotationId === id) selectedAnnotationId = null;
+  syncAnnotationUI();
+  requestRender();
+}
+
+function clearAnnotations(): void {
+  if (annotations.length === 0) return;
+  annotations = [];
+  selectedAnnotationId = null;
+  syncAnnotationUI();
+  requestRender();
+  toast("주석을 모두 지웠습니다.");
+}
+
+function syncAnnotationUI(): void {
+  document.querySelectorAll<HTMLElement>("#annotation-tools .tool").forEach((b) => {
+    b.classList.toggle("active", (b.dataset.tool ?? "") === (activeTool ?? ""));
+  });
+  document.querySelectorAll<HTMLElement>("#anno-swatches .swatch").forEach((b) => {
+    b.classList.toggle("active", b.dataset.color === annoColor);
+  });
+
+  const editing = !!activeTool || !!selectedAnnotationId;
+  // 모자이크는 색이 의미 없으므로 색 선택을 숨긴다
+  $("#anno-style").hidden = !editing || activeTool === "mosaic";
+  $("#anno-sliders").hidden = !editing;
+  $("#btn-anno-clear").hidden = annotations.length === 0;
+
+  const hint = $("#anno-hint");
+  if (activeTool) {
+    const name = ANNOTATION_TOOLS.find((t) => t.id === activeTool)?.name ?? "";
+    hint.textContent = `${name} — 미리보기에서 드래그하세요.`;
+  } else if (selectedAnnotationId) {
+    hint.textContent = "선택됨 — Del 로 삭제, 색·크기를 바꿀 수 있습니다.";
+  } else if (annotations.length) {
+    hint.textContent = "주석을 클릭하면 선택됩니다.";
+  } else {
+    hint.textContent = "도구를 고른 뒤 미리보기에서 드래그하세요.";
+  }
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -2032,6 +2373,9 @@ function clearCanvasEdits(): void {
   bg = defaultBackgroundOptions();
   stamps = [];
   selectedStampId = null;
+  annotations = [];
+  selectedAnnotationId = null;
+  setTool(null);
   outputWidth = 0;
   setActiveFilterPreset("none");
   refreshFilterUI();
@@ -2072,7 +2416,7 @@ function bindActions(): void {
     "cycle-ratio": cycleRatio,
     "auto-trim": () => void doAutoTrim(false),
     "tab-adjust": () => openEditor("adjust"),
-    "tab-stamps": () => openEditor("stamps"),
+    "tab-marks": () => openEditor("marks"),
     "tab-background": () => openEditor("background"),
     "open-settings": toggleSettings,
   };
@@ -2086,6 +2430,11 @@ function bindActions(): void {
         e.preventDefault();
         return;
       }
+      if (activeTool) {
+        setTool(null);
+        e.preventDefault();
+        return;
+      }
       if (isEditorOpen() && !isEditable(e.target)) {
         closeEditor();
         e.preventDefault();
@@ -2094,6 +2443,11 @@ function bindActions(): void {
     }
     // 선택된 스탬프 삭제 (녹화 중이 아닐 때)
     if ((e.key === "Delete" || e.key === "Backspace") && !manager.isRecording && !isEditable(e.target)) {
+      if (selectedAnnotationId) {
+        removeAnnotation(selectedAnnotationId);
+        e.preventDefault();
+        return;
+      }
       if (selectedStampId) {
         removeStamp(selectedStampId);
         e.preventDefault();
@@ -2329,6 +2683,17 @@ declare global {
       getOutputWidth: () => number;
       toggleArmedStamp: (id: string) => void;
       getArmedStamps: () => string[];
+      setTool: (kind: AnnotationKind | null) => void;
+      getTool: () => string | null;
+      addAnnotation: (
+        kind: AnnotationKind,
+        x1: number,
+        y1: number,
+        x2: number,
+        y2: number,
+      ) => void;
+      getAnnotations: () => Annotation[];
+      clearAnnotations: () => void;
     };
   }
 }
@@ -2411,6 +2776,15 @@ function exposeTestHook(): void {
       syncArmedNote();
     },
     getArmedStamps: () => [...armedStampIds],
+    setTool,
+    getTool: () => activeTool,
+    addAnnotation: (kind, x1, y1, x2, y2) => {
+      annotations.push(createAnnotation(kind, x1, y1, x2, y2, { color: annoColor, size: annoSize }));
+      syncAnnotationUI();
+      requestRender();
+    },
+    getAnnotations: () => annotations.map((a) => ({ ...a })),
+    clearAnnotations,
   };
 }
 
@@ -2464,13 +2838,14 @@ function init(): void {
   buildFilterPanel();
   buildAiPanel();
   buildStampPanel();
+  buildAnnotationPanel();
   buildBackgroundPanel();
   buildSettingsWindow();
   buildHomeDeck();
   applyDeckState();
   bindActions();
   bindInputSources();
-  setupStampDragging();
+  setupCanvasInteraction();
   setupWindow();
   setupQuickThumb();
   setupNative();
